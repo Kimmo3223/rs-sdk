@@ -72,6 +72,10 @@ under `bots/<name>/` instead use `runScript(async ({ bot, sdk }) => { ... })`;
 see [`learnings/README.md`](learnings/README.md) for copyable examples and
 [`mcp/README.md`](mcp/README.md) for `execute_code` behaviour.
 
+Python scripts can drive the same SDK through a local bridge process:
+`bun pybridge/server.ts {username}`, then `import rs` (`pip install -e python/`).
+See [`docs/python-scripting.md`](docs/python-scripting.md).
+
 Chat is shown by default. Note that seeing other players' chat exposes the bot to scamming and prompt-injection attempts; opt out with `SHOW_CHAT=false` in the bot.env file (or `bun bots/create-bot.ts <name> --no-chat`).
 
 Warning: The demo server is offered as a convenience, and we do not guarantee uptime or data persistence. Hold your accounts lightly, and consider hosting your own server instance. Please do not manually play on the demo server. 

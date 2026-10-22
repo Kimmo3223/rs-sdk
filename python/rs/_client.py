@@ -125,7 +125,7 @@ class Client(AsyncBotMethods, AsyncSdkMethods):
         except httpx.ConnectError:
             raise _not_running(self.base_url, self.bot_name) from None
         except httpx.TransportError as error:
-            raise RSError(f"lost the bridge connection: {error}", "bridge_unreachable", method) from None
+            raise BridgeNotRunningError(f"lost the bridge connection: {error}", "bridge_unreachable", method) from None
         return _unwrap(response, method)
 
     async def _call(self, method: str, *args: Any) -> Any:
@@ -180,7 +180,7 @@ class SyncClient(SyncBotMethods, SyncSdkMethods):
         except httpx.ConnectError:
             raise _not_running(self.base_url, self.bot_name) from None
         except httpx.TransportError as error:
-            raise RSError(f"lost the bridge connection: {error}", "bridge_unreachable", method) from None
+            raise BridgeNotRunningError(f"lost the bridge connection: {error}", "bridge_unreachable", method) from None
         return _unwrap(response, method)
 
     def _call(self, method: str, *args: Any) -> Any:
