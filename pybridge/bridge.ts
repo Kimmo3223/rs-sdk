@@ -20,13 +20,15 @@ import type { BotWorldState } from '../sdk/types';
 import { executionContext, abortable } from '../sdk/execution-context';
 import { BridgeError } from './errors';
 import { decodeArgs, encodeState, encodeValue } from './codec';
-import type { MethodSpec } from './methods';
+import type { ExcludedMethod, MethodSpec } from './methods';
 
 export interface BridgeOptions {
     sdk: BotSDK;
     bot: BotActions;
     username: string;
     methods: readonly MethodSpec[];
+    /** Reported by GET /methods so a missing method explains itself. */
+    excluded?: readonly ExcludedMethod[];
     /** How long a call waits for a fresh game tick before reporting no client (default 10s, as sdk/runner.ts). */
     liveClientWaitMs?: number;
     /** A tick older than this means the client is gone (default 10s). */
@@ -156,7 +158,10 @@ export function createBridge(options: BridgeOptions): Bridge {
                 () => abortable(Promise.resolve().then(() => fn.apply(target, decoded))),
             );
             const result = spec.queued ? await inQueue(method, controller.signal, invoke) : await invoke();
-            return json({ ok: true, result: encodeValue(result, spec.resultKind) });
+            const encoded = spec.resultKind === 'state'
+                ? (result ? encodeState(result as BotWorldState) : null)
+                : encodeValue(result, spec.resultKind);
+            return json({ ok: true, result: encoded });
         } finally {
             req.signal.removeEventListener('abort', onAbort);
             if (!controller.signal.aborted) controller.abort(new Error('Call finished'));
@@ -189,7 +194,7 @@ export function createBridge(options: BridgeOptions): Bridge {
             try {
                 if (req.method === 'GET' && url.pathname === '/health') return json(health());
                 if (req.method === 'GET' && url.pathname === '/state') return getState(url);
-                if (req.method === 'GET' && url.pathname === '/methods') return json({ ok: true, result: [...methods.values()] });
+                if (req.method === 'GET' && url.pathname === '/methods') return json({ ok: true, result: { methods: [...methods.values()], excluded: options.excluded ?? [] } });
                 if (req.method === 'POST' && url.pathname === '/call') return await call(req);
                 throw new BridgeError(`Not found: ${req.method} ${url.pathname}`, 'not_found');
             } catch (error) {
