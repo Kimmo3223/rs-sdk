@@ -37,3 +37,5 @@ server/engine/data/market.sqlite*
 
 # Dashboard state is live host data, not source.
 /dashboard-max/data/
+.venv/
+.play-logs/
