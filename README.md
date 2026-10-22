@@ -22,6 +22,19 @@ See the [benchmark comparing models](https://github.com/MaxBittker/rs-bench) for
 > [!NOTE]
 > RS-SDK is a fork of the LostCity engine/client, an amazing project without which rs-sdk would not be possible. 
 > Find their [code here](https://github.com/LostCityRS/Server) or read their [history and ethos](https://lostcity.rs/t/faq-what-is-lost-city/16)
+## Quick start: play with Python
+
+New here? Write a Python bot and watch it play in your browser:
+
+```sh
+git clone https://github.com/MaxBittker/rs-sdk.git && cd rs-sdk
+bun install
+bun play.ts mybot                      # starts everything; first run takes a few minutes
+.venv/bin/python bots/mybot/bot.py     # in a second terminal
+```
+
+See **[PYTHON.md](PYTHON.md)** for the step-by-step tutorial.
+
 ## Getting Started:
 ```sh
 git clone https://github.com/MaxBittker/rs-sdk.git
