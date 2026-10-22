@@ -171,7 +171,6 @@ export function createBridge(options: BridgeOptions): Bridge {
     function health() {
         const state = sdk.getState();
         return {
-            ok: true,
             bot: username,
             gateway: sdk.getConnectionState(),
             clientAttached: attached(),
@@ -192,7 +191,7 @@ export function createBridge(options: BridgeOptions): Bridge {
         async fetch(req: Request): Promise<Response> {
             const url = new URL(req.url);
             try {
-                if (req.method === 'GET' && url.pathname === '/health') return json(health());
+                if (req.method === 'GET' && url.pathname === '/health') return json({ ok: true, result: health() });
                 if (req.method === 'GET' && url.pathname === '/state') return getState(url);
                 if (req.method === 'GET' && url.pathname === '/methods') return json({ ok: true, result: { methods: [...methods.values()], excluded: options.excluded ?? [] } });
                 if (req.method === 'POST' && url.pathname === '/call') return await call(req);
