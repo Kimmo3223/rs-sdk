@@ -15,6 +15,7 @@ import { BotActions } from '../sdk/actions';
 import { initPathfinding } from '../sdk/pathfinding';
 import { loadBotEnv } from './env';
 import { createBridge } from './bridge';
+import { STAGE_TWO_METHODS } from './methods';
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 8765;
@@ -68,7 +69,7 @@ const sdk = new BotSDK({
     showChat: env.showChat,
 });
 const bot = new BotActions(sdk);
-const bridge = createBridge({ sdk, bot, username: env.username });
+const bridge = createBridge({ sdk, bot, username: env.username, methods: STAGE_TWO_METHODS });
 
 // Listen before connecting so /health answers while the gateway is still
 // coming up. idleTimeout 0: a call lasts as long as the SDK's own timeouts.
