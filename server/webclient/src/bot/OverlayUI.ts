@@ -153,7 +153,7 @@ export class OverlayUI {
             flex: 1;
             text-align: left;
         `;
-        this.actionLog.textContent = 'Download the SDK to get started:\ngithub.com/MaxBittker/rs-sdk\n\n(waiting for SDK actions...)';
+        this.actionLog.textContent = '(waiting for your bot script...)';
 
         actionsPanel.appendChild(actionHeader);
         actionsPanel.appendChild(this.actionLog);
