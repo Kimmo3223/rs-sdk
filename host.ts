@@ -6,6 +6,7 @@
 //   bun host.ts reset <name> [pass]  give an account a new password
 //   bun host.ts remove <name>        delete an account (its save file stays)
 //   bun host.ts list                 list accounts
+//   bun host.ts log [--follow]       who visited, signed in or failed to (add --follow to watch live)
 //
 // Without options the tunnel is a free "quick tunnel" whose address changes on
 // every start. With a Cloudflare account and your own domain, use a named
@@ -42,7 +43,7 @@ const HOST_ENGINE_ENV: Record<string, string> = {
 };
 
 function usage(): never {
-    console.error('Usage:\n  bun host.ts [--tunnel <name> --hostname <host>]\n  bun host.ts add <name> [password]\n  bun host.ts reset <name> [password]\n  bun host.ts remove <name>\n  bun host.ts list');
+    console.error('Usage:\n  bun host.ts [--tunnel <name> --hostname <host>]\n  bun host.ts add <name> [password]\n  bun host.ts reset <name> [password]\n  bun host.ts remove <name>\n  bun host.ts list\n  bun host.ts log [--follow]');
     process.exit(2);
 }
 
@@ -218,6 +219,65 @@ This address changes when you restart hosting. Press Ctrl+C here to stop.
     await new Promise(() => {});
 }
 
+const ACCESS_LOG = join(LOGS, 'access.log');
+const ENGINE_LOG = join(LOGS, 'engine.log');
+const LABELS: Record<string, string> = {
+    visit: 'visit', signin: 'SIGNED IN', signin_failed: 'SIGN-IN FAILED', locked_out: 'LOCKED OUT', connect: 'connected',
+};
+
+function formatAccess(line: string): string | null {
+    try {
+        const e = JSON.parse(line) as { time: string; event: string; ip: string; country: string | null; user: string | null; path: string; agent: string | null };
+        const when = new Date(e.time).toLocaleString();
+        const who = e.event === 'signin_failed' || e.event === 'locked_out' ? `tried "${e.user ?? ''}"` : (e.user ?? 'not signed in');
+        const what = e.event === 'connect' ? (e.path.startsWith('/gateway') ? 'bot connection' : 'game connection') : e.path;
+        return `${when}  ${(LABELS[e.event] ?? e.event).padEnd(14)}  ${who.padEnd(22)}  ${e.ip}${e.country ? ` (${e.country})` : ''}  ${what}`;
+    } catch {
+        return null;
+    }
+}
+
+function formatEngine(line: string): string | null {
+    // eslint-disable-next-line no-control-regex
+    const plain = line.replace(/\x1b\[[0-9;]*m/g, '');
+    const match = /^(.*?)\s+WARN\s+Login rejected: (.*)$/.exec(plain);
+    return match ? `${match[1]!.trim()}  REFUSED         ${match[2]}` : null;
+}
+
+function readLines(path: string): string[] {
+    return existsSync(path) ? readFileSync(path, 'utf8').split('\n').filter(Boolean) : [];
+}
+
+async function showLog(follow: boolean): Promise<void> {
+    const access = readLines(ACCESS_LOG).map(formatAccess).filter(Boolean) as string[];
+    const refused = readLines(ENGINE_LOG).map(formatEngine).filter(Boolean) as string[];
+    console.log('Website visits, sign-ins and connections (newest last):');
+    console.log(access.slice(-60).join('\n') || '  (nothing yet)');
+    console.log('\nRefused game and bot logins, from the game server:');
+    console.log(refused.slice(-30).join('\n') || '  (none)');
+    console.log('\nGame logins pass through the gate, so the game server sees them from 127.0.0.1;');
+    console.log('the "game connection" entry at the same time above has the real address.');
+    if (!follow) return;
+    console.log('\nWatching for new entries (Ctrl+C to stop)...');
+    let seenAccess = readLines(ACCESS_LOG).length;
+    let seenEngine = readLines(ENGINE_LOG).length;
+    for (;;) {
+        await Bun.sleep(1000);
+        const a = readLines(ACCESS_LOG);
+        for (const line of a.slice(seenAccess)) {
+            const text = formatAccess(line);
+            if (text) console.log(text);
+        }
+        seenAccess = a.length;
+        const g = readLines(ENGINE_LOG);
+        for (const line of g.slice(seenEngine)) {
+            const text = formatEngine(line);
+            if (text) console.log(text);
+        }
+        seenEngine = g.length;
+    }
+}
+
 const args = process.argv.slice(2);
 const [command, name, password] = args;
 if (!command || command.startsWith('--')) {
@@ -229,6 +289,9 @@ if (!command || command.startsWith('--')) {
     const hostname = flag('--hostname');
     if (Boolean(tunnel) !== Boolean(hostname)) usage();
     await host(tunnel && hostname ? { tunnel, hostname } : null);
+} else if (command === 'log') {
+    await showLog(args.includes('--follow') || args.includes('-f'));
+    process.exit(0);
 } else if (command === 'remove') {
     if (!name) usage();
     migrate();

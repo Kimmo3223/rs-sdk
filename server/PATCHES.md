@@ -113,6 +113,9 @@ survival) is described in the project memory; this file is the human-readable ch
       staffmodlevel on non-production worlds** (public server safety).
 
 ### Gameplay / safety
+- [ ] **Refused-login log line** — `LoginServer.ts` prints `Login rejected: ...` (printWarning) for
+      wrong passwords and unknown accounts, on both the game login and the SDK auth paths. `host.ts log`
+      reads these from the engine log. Verify: `grep -n "Login rejected" src/server/login/LoginServer.ts`.
 - [ ] **`BIND_HOSTNAME`** — `Environment.ts` key (default `0.0.0.0`) used as the bind address by
       the web and management servers (`web/index.ts`), game TCP (`tcp/TcpServer.ts`) and the
       login/friend/logger servers. `host.ts` sets `127.0.0.1` so only the auth gate is reachable.

@@ -153,6 +153,19 @@ bun host.ts reset alice       # new password (prints a new bot.env)
 bun host.ts remove alice      # delete the account; their character's save file stays
 ```
 
+### Who visited or tried to sign in
+
+```sh
+bun host.ts log            # recent visits, sign-ins, failed attempts and connections
+bun host.ts log --follow   # keep watching live
+```
+
+Every website visit, sign-in, failed sign-in (with the name that was tried),
+lockout and game or bot connection is listed with the visitor's IP address and
+country (from Cloudflare). Refused game and bot logins come from the game
+server's log. Passwords are never logged. The raw data is in
+`.play-logs/access.log`, one JSON entry per line.
+
 ## A fixed address (optional)
 
 The free tunnel's address changes on every start and its domain is blocked by

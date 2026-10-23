@@ -15,7 +15,7 @@
 // directly, so the browser client link play.ts prints keeps working.
 
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { ServerWebSocket } from 'bun';
 import { checkLogin, toSafeName } from './accounts';
@@ -31,9 +31,33 @@ export interface GateOptions {
     upstream: string;
     secret: Buffer;
     checkLogin: (username: string, password: string) => Promise<boolean>;
+    /** Called for every visit, sign-in and connection (never with a password). */
+    accessLog?: (entry: AccessEntry) => void;
     /** Failed sign-ins allowed per client in `failWindowMs` (default 10 per 10 minutes). */
     maxFailures?: number;
     failWindowMs?: number;
+}
+
+export type AccessEvent = 'visit' | 'signin' | 'signin_failed' | 'locked_out' | 'connect';
+
+export interface AccessEntry {
+    time: string;
+    event: AccessEvent;
+    ip: string;
+    country: string | null;
+    /** The signed-in user, or for signin_failed the name that was tried. */
+    user: string | null;
+    path: string;
+    agent: string | null;
+}
+
+/** Append entries as JSON lines (one per line) to `path`. */
+export function fileAccessLog(path: string): (entry: AccessEntry) => void {
+    mkdirSync(join(path, '..'), { recursive: true });
+    return entry => {
+        appendFileSync(path, `${JSON.stringify(entry)}\n`);
+        console.log(`[gate] ${entry.time} ${entry.event} ${entry.user ?? '-'} ${entry.ip}${entry.country ? ` (${entry.country})` : ''} ${entry.path}`);
+    };
 }
 
 function loadSecret(): Buffer {
@@ -127,6 +151,20 @@ export function createGate(options: GateOptions) {
         return req.headers.get('cf-connecting-ip') ?? server.requestIP(req)?.address ?? 'unknown';
     }
 
+    function log(event: AccessEvent, req: Request, ip: string, user: string | null, url: URL): void {
+        if (!options.accessLog) return;
+        options.accessLog({
+            time: new Date().toISOString(),
+            event,
+            ip,
+            country: req.headers.get('cf-ipcountry'),
+            // Names come from the client: keep them short and printable.
+            user: user ? user.replace(/[^\w ]/g, '?').slice(0, 20) : null,
+            path: url.pathname.slice(0, 100),
+            agent: req.headers.get('user-agent')?.slice(0, 160) ?? null,
+        });
+    }
+
     function tooManyFailures(ip: string): boolean {
         const now = Date.now();
         const recent = (failures.get(ip) ?? []).filter(t => now - t < failWindowMs);
@@ -157,16 +195,21 @@ export function createGate(options: GateOptions) {
         return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
     }
 
-    async function handleLogin(req: Request, ip: string): Promise<Response> {
+    async function handleLogin(req: Request, url: URL, ip: string): Promise<Response> {
         const form = await req.formData().catch(() => null);
         const next = safeNext(form?.get('next')?.toString() ?? null);
-        if (tooManyFailures(ip)) return loginPage(next, 'Too many failed attempts. Try again in a few minutes.', 429);
         const username = form?.get('username')?.toString() ?? '';
+        if (tooManyFailures(ip)) {
+            log('locked_out', req, ip, username, url);
+            return loginPage(next, 'Too many failed attempts. Try again in a few minutes.', 429);
+        }
         const password = form?.get('password')?.toString() ?? '';
         if (!(await options.checkLogin(username, password))) {
             recordFailure(ip);
+            log('signin_failed', req, ip, username, url);
             return loginPage(next, 'Wrong username or password.', 401);
         }
+        log('signin', req, ip, toSafeName(username), url);
         return new Response(null, {
             status: 303,
             headers: { location: next, 'set-cookie': cookieHeader(makeSession(options.secret, username), SESSION_DAYS * 86_400) },
@@ -181,6 +224,7 @@ export function createGate(options: GateOptions) {
 
             if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
                 if (url.pathname.startsWith('/worldfeed') && !user) return new Response('Sign in first', { status: 401 });
+                log('connect', req, ip, user, url);
                 const protocol = req.headers.get('sec-websocket-protocol')?.split(',')[0]?.trim() || null;
                 const ok = server.upgrade(req, {
                     data: { path: `${url.pathname}${url.search}`, protocol, pending: [] },
@@ -190,13 +234,15 @@ export function createGate(options: GateOptions) {
             }
 
             if (url.pathname === '/gate/login') {
-                if (req.method === 'POST') return handleLogin(req, ip);
+                if (req.method === 'POST') return handleLogin(req, url, ip);
                 return user ? Response.redirect(safeNext(url.searchParams.get('next')), 303) : loginPage(safeNext(url.searchParams.get('next')));
             }
             if (url.pathname === '/gate/logout') {
                 return new Response(null, { status: 303, headers: { location: '/gate/login', 'set-cookie': cookieHeader('', 0) } });
             }
 
+            const wantsHtml = req.method === 'GET' && (req.headers.get('accept') ?? '').includes('text/html');
+            if (wantsHtml) log('visit', req, ip, user, url);
             if (user || isOpenPath(url.pathname)) return proxy(req, url);
 
             // The browser client link carries the bot's own credentials: accept them as a sign-in.
@@ -204,12 +250,13 @@ export function createGate(options: GateOptions) {
             const botPassword = url.searchParams.get('password');
             if (url.pathname.startsWith('/bot') && botName && botPassword && !tooManyFailures(ip)) {
                 if (await options.checkLogin(botName, botPassword)) {
+                    log('signin', req, ip, toSafeName(botName), url);
                     return proxy(req, url, { 'set-cookie': cookieHeader(makeSession(options.secret, botName), SESSION_DAYS * 86_400) });
                 }
                 recordFailure(ip);
+                log('signin_failed', req, ip, botName, url);
             }
 
-            const wantsHtml = req.method === 'GET' && (req.headers.get('accept') ?? '').includes('text/html');
             if (wantsHtml) return Response.redirect(`/gate/login?next=${encodeURIComponent(url.pathname + url.search)}`, 303);
             return Response.json({ ok: false, error: 'Sign in first' }, { status: 401 });
         },
@@ -246,7 +293,8 @@ if (import.meta.main) {
         return i >= 0 && args[i + 1] ? args[i + 1]! : fallback;
     };
     const port = Number(arg('--port', '8890'));
-    const gate = createGate({ upstream: arg('--upstream', 'http://127.0.0.1:8888'), secret: loadSecret(), checkLogin });
+    const logPath = arg('--log', join(import.meta.dir, '..', '..', '.play-logs', 'access.log'));
+    const gate = createGate({ upstream: arg('--upstream', 'http://127.0.0.1:8888'), secret: loadSecret(), checkLogin, accessLog: fileAccessLog(logPath) });
     Bun.serve({ hostname: '127.0.0.1', port, idleTimeout: 0, fetch: gate.fetch, websocket: gate.websocket });
     console.log(`[gate] Sign-in required on http://127.0.0.1:${port}`);
 }

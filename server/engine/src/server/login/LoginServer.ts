@@ -483,6 +483,8 @@ export default class LoginServer {
 
                             if (!account || !passwordMatch) {
                                 // invalid username or password
+                                // rs-sdk: record refused logins so a host can see who tried (bun host.ts log)
+                                printWarning(`Login rejected: game login as "${username}" (${account ? 'wrong password' : 'unknown account'}) from ${remoteAddress}`);
                                 s.send(
                                     JSON.stringify({
                                         replyTo,
@@ -893,6 +895,7 @@ export default class LoginServer {
                         const sdkPasswordMatch = account ? await comparePassword(password, account.password) : false;
 
                         if (!account || !sdkPasswordMatch) {
+                            printWarning(`Login rejected: bot connection as "${username}" (${account ? 'wrong password' : 'unknown account'})`);
                             s.send(JSON.stringify({
                                 replyTo,
                                 success: false,

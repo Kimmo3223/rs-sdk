@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { checkLogin, ensureAccount, listAccounts, migrateDatabase, toSafeName } from './accounts';
-import { createGate, isOpenPath, makeSession, readSession } from './gate';
+import { createGate, isOpenPath, makeSession, readSession, type AccessEntry } from './gate';
 
 const secret = Buffer.alloc(32, 7);
 
@@ -38,11 +38,13 @@ describe('gate', () => {
             return new Response('upstream ok');
         },
     });
+    const logged: AccessEntry[] = [];
     const gate = createGate({
         upstream: `http://127.0.0.1:${upstream.port}`,
         secret,
         checkLogin: async (user, pass) => user.toLowerCase() === 'esko' && pass === 'correct-horse',
         maxFailures: 3,
+        accessLog: entry => logged.push(entry),
     });
     const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: gate.fetch, websocket: gate.websocket });
     const base = `http://127.0.0.1:${server.port}`;
@@ -96,6 +98,21 @@ describe('gate', () => {
         for (let i = 0; i < 3; i++) expect((await login('esko', `guess${i}`, '/', '9.9.9.9')).status).toBe(401);
         expect((await login('esko', 'correct-horse', '/', '9.9.9.9')).status).toBe(429);
         expect((await login('esko', 'correct-horse', '/', '8.8.8.8')).status).toBe(303);
+    });
+
+    test('logs visits and sign-ins, never passwords', async () => {
+        logged.length = 0;
+        await fetch(`${base}/`, { redirect: 'manual', headers: { accept: 'text/html', 'cf-connecting-ip': '5.5.5.5', 'cf-ipcountry': 'FI' } });
+        await login('intruder<script>', 'hunter2', '/', '5.5.5.5');
+        await login('esko', 'correct-horse', '/', '5.5.5.5');
+        expect(logged.map(e => [e.event, e.user, e.ip])).toEqual([
+            ['visit', null, '5.5.5.5'],
+            ['signin_failed', 'intruder?script?', '5.5.5.5'],
+            ['signin', 'esko', '5.5.5.5'],
+        ]);
+        expect(logged[0]!.country).toBe('FI');
+        expect(JSON.stringify(logged)).not.toContain('hunter2');
+        expect(JSON.stringify(logged)).not.toContain('correct-horse');
     });
 
     test('refuses the world feed WebSocket without a session', async () => {
