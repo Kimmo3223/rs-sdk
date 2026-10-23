@@ -101,7 +101,7 @@ account database are never committed (`.gitignore` covers them).
 ```sh
 nix shell nixpkgs#gh                     # or install GitHub's gh tool another way
 gh auth login                            # log in with your browser
-gh repo fork MaxBittker/rs-sdk --remote --remote-name fork
+gh repo fork --remote --remote-name fork   # run inside your copy of the game
 git push -u fork python-bridge
 ```
 
