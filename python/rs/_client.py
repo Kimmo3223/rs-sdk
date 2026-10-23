@@ -25,7 +25,9 @@ _TIMEOUT = httpx.Timeout(connect=5.0, read=None, write=30.0, pool=None)
 def _not_running(base_url: str, bot: str | None) -> BridgeNotRunningError:
     port = base_url.rsplit(":", 1)[-1]
     return BridgeNotRunningError(
-        f"No RS bridge is answering on {base_url}. Start it with: bun pybridge/server.ts {bot or '<botname>'} --port {port}",
+        f"No RS bridge is answering on {base_url}. Start the game for this bot first, and leave it running: "
+        f"bun play.ts {bot or '<botname>'}"
+        + ("" if port == "8765" else f" (or bun pybridge/server.ts {bot or '<botname>'} --port {port})"),
         "bridge_unreachable",
     )
 
