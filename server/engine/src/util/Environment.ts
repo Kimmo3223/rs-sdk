@@ -23,6 +23,10 @@ export default {
     // rs-sdk-only keys read straight from the environment.
     // ---------------------------------------------------------------------------
 
+    // rs-sdk: interface every listener binds (web, management, game TCP, login/friend/logger).
+    // Default all interfaces; set 127.0.0.1 when a reverse proxy or tunnel is the only way in.
+    BIND_HOSTNAME: process.env.BIND_HOSTNAME || '0.0.0.0',
+
     // flat aliases -> 274 nested config
     WEB_PORT: config.web.port,
     WEB_MANAGEMENT_PORT: config.web.managementPort,

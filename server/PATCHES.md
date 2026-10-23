@@ -113,6 +113,10 @@ survival) is described in the project memory; this file is the human-readable ch
       staffmodlevel on non-production worlds** (public server safety).
 
 ### Gameplay / safety
+- [ ] **`BIND_HOSTNAME`** — `Environment.ts` key (default `0.0.0.0`) used as the bind address by
+      the web and management servers (`web/index.ts`), game TCP (`tcp/TcpServer.ts`) and the
+      login/friend/logger servers. `host.ts` sets `127.0.0.1` so only the auth gate is reachable.
+      Verify: `grep -rn "'0.0.0.0'" src` lists only `setup.ts`.
 - [ ] **XP curve** — `entity/Player.ts` `getExpByLevel` table: delta uses `level/7.0`
       (classic curve; rs-sdk used a flatter `level/10.0` until this fork restored it), table stored in ×10 "fine" units (`Math.floor(acc/4) * 10`), L99 =
       130,344,310 (13,034,431 real XP). **Duplicated in webclient — keep in sync (see below).**

@@ -368,7 +368,7 @@ export default class LoginServer {
             printWarning('qp varp is not scope=perm - the quest points hiscore will not update');
         }
 
-        this.server = new WebSocketServer({ port: Environment.login.port, host: '0.0.0.0' }, () => {
+        this.server = new WebSocketServer({ port: Environment.login.port, host: Environment.BIND_HOSTNAME }, () => {
             printInfo(`Login server listening on port ${Environment.login.port}`);
         });
 

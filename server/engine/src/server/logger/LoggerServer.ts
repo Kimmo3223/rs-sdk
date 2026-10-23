@@ -406,7 +406,7 @@ function startTracesHttp() {
             res.end();
         }
     });
-    server.listen(TRACES_HTTP_PORT, '0.0.0.0', () => {
+    server.listen(TRACES_HTTP_PORT, Environment.BIND_HOSTNAME, () => {
         printInfo(`Telemetry traces listening on port ${TRACES_HTTP_PORT}`);
     });
 }
@@ -433,7 +433,7 @@ export default class LoggerServer {
         setTimeout(compactTelemetrySafe, TELEMETRY_COMPACT_STARTUP_DELAY_MS);
         setInterval(compactTelemetrySafe, TELEMETRY_COMPACT_INTERVAL_MS);
         startTracesHttp();
-        this.server = new WebSocketServer({ port: Environment.logger.port, host: '0.0.0.0' }, () => {
+        this.server = new WebSocketServer({ port: Environment.logger.port, host: Environment.BIND_HOSTNAME }, () => {
             printInfo(`Logger server listening on port ${Environment.logger.port}`);
         });
 
