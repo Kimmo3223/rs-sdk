@@ -86,12 +86,20 @@ describe('gate', () => {
         expect(res.headers.get('location')).toBe('/');
     });
 
-    test('the browser client link signs in with the bot credentials', async () => {
-        const ok = await fetch(`${base}/bot?bot=esko&password=correct-horse`);
-        expect(ok.headers.get('set-cookie')).toContain('rs_gate=');
-        expect(await ok.text()).toBe('upstream ok');
-        const bad = await fetch(`${base}/bot?bot=esko&password=nope`, { redirect: 'manual', headers: { accept: 'text/html' } });
-        expect(bad.status).toBe(303);
+    test('the browser client link keeps the password out of every URL the server sees', async () => {
+        // Old-style ?password= links: redirected to sign in, without the password.
+        const old = await fetch(`${base}/bot?bot=esko&password=correct-horse`, { redirect: 'manual', headers: { accept: 'text/html' } });
+        expect(old.status).toBe(303);
+        expect(old.headers.get('location')).toBe('/gate/login?next=%2Fbot%3Fbot%3Desko');
+        expect(upstreamSeen.some(p => p.includes('password'))).toBeFalse();
+        // The sign-in page posts the #fragment password and returns to the page with it in the fragment.
+        const ok = await login('esko', 'correct-horse', '/bot?bot=esko#password=correct-horse');
+        expect(ok.status).toBe(303);
+        expect(ok.headers.get('location')).toBe('/bot?bot=esko#password=correct-horse');
+        // A failed attempt never echoes the password back into the page.
+        const bad = await login('esko', 'nope', '/bot?bot=esko#password=nope');
+        expect(bad.status).toBe(401);
+        expect(await bad.text()).not.toContain('password=nope');
     });
 
     test('locks out a client after repeated failures', async () => {

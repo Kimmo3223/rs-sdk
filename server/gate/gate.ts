@@ -11,8 +11,9 @@
 //     gateway check the account password; /worldfeed still needs the cookie)
 //   - game cache files (/crc, /config..., /api/version) that the headless
 //     lite client downloads before it logs in
-// Opening /bot?bot=<name>&password=<password> with valid credentials signs in
-// directly, so the browser client link play.ts prints keeps working.
+// The browser client link play.ts opens (/bot?bot=<name>#password=<password>)
+// signs in by itself: the sign-in page picks the password out of the #fragment,
+// which browsers never send to a server, and posts it like a normal sign-in.
 
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -106,6 +107,12 @@ function safeNext(next: string | null): string {
     return next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/gate/') ? next : '/';
 }
 
+/** next without its #fragment, which may carry a password and must not be echoed into a page. */
+function withoutFragment(next: string): string {
+    const hash = next.indexOf('#');
+    return hash < 0 ? next : next.slice(0, hash);
+}
+
 function loginPage(next: string, error?: string, status = 200): Response {
     const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -128,7 +135,24 @@ function loginPage(next: string, error?: string, status = 200): Response {
   <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required maxlength="20">
   <button type="submit">Sign in</button>
   ${error ? `<div class="err">${escapeHtml(error)}</div>` : ''}
-</form></body></html>`;
+</form>
+<script>
+  // The browser client link carries the bot password in the #fragment (never sent to the
+  // server). Sign in with it once, keeping it in the fragment of the page we return to.
+  (function () {
+    var hash = new URLSearchParams(location.hash.slice(1));
+    var password = hash.get('password');
+    if (!password || ${error ? 'true' : 'false'}) return;
+    var form = document.forms[0];
+    var bot = new URL(form.next.value, location.origin).searchParams.get('bot');
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!bot) return;
+    form.username.value = bot;
+    form.password.value = password;
+    form.next.value = form.next.value + '#password=' + encodeURIComponent(password);
+    form.submit();
+  })();
+</script></body></html>`;
     return new Response(html, { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
@@ -201,13 +225,13 @@ export function createGate(options: GateOptions) {
         const username = form?.get('username')?.toString() ?? '';
         if (tooManyFailures(ip)) {
             log('locked_out', req, ip, username, url);
-            return loginPage(next, 'Too many failed attempts. Try again in a few minutes.', 429);
+            return loginPage(withoutFragment(next), 'Too many failed attempts. Try again in a few minutes.', 429);
         }
         const password = form?.get('password')?.toString() ?? '';
         if (!(await options.checkLogin(username, password))) {
             recordFailure(ip);
             log('signin_failed', req, ip, username, url);
-            return loginPage(next, 'Wrong username or password.', 401);
+            return loginPage(withoutFragment(next), 'Wrong username or password.', 401);
         }
         log('signin', req, ip, toSafeName(username), url);
         return new Response(null, {
@@ -245,19 +269,12 @@ export function createGate(options: GateOptions) {
             if (wantsHtml) log('visit', req, ip, user, url);
             if (user || isOpenPath(url.pathname)) return proxy(req, url);
 
-            // The browser client link carries the bot's own credentials: accept them as a sign-in.
-            const botName = url.searchParams.get('bot');
-            const botPassword = url.searchParams.get('password');
-            if (url.pathname.startsWith('/bot') && botName && botPassword && !tooManyFailures(ip)) {
-                if (await options.checkLogin(botName, botPassword)) {
-                    log('signin', req, ip, toSafeName(botName), url);
-                    return proxy(req, url, { 'set-cookie': cookieHeader(makeSession(options.secret, botName), SESSION_DAYS * 86_400) });
-                }
-                recordFailure(ip);
-                log('signin_failed', req, ip, botName, url);
+            if (wantsHtml) {
+                // Never carry an old-style ?password= into the sign-in page's address.
+                const next = new URL(url);
+                next.searchParams.delete('password');
+                return Response.redirect(`/gate/login?next=${encodeURIComponent(next.pathname + next.search)}`, 303);
             }
-
-            if (wantsHtml) return Response.redirect(`/gate/login?next=${encodeURIComponent(url.pathname + url.search)}`, 303);
             return Response.json({ ok: false, error: 'Sign in first' }, { status: 401 });
         },
         websocket: {

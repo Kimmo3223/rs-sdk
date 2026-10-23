@@ -208,8 +208,8 @@
                 updateUrlWithBot(newUsername);
             }
 
-            // Load password from URL ?password= param or localStorage
-            const urlPassword = urlParams.get('password');
+            // Load password from the link (see takeUrlPassword) or localStorage
+            const urlPassword = takeUrlPassword();
             const savedPass = localStorage.getItem('bot_password');
             if (urlPassword) {
                 document.getElementById('bot-password').value = urlPassword;
@@ -229,7 +229,7 @@
             // Read URL params directly (loadSettings may not have run yet)
             const urlParams = new URLSearchParams(window.location.search);
             const params = {
-                password: urlParams.get('password'),
+                password: takeUrlPassword(),
                 fps: urlParams.has('fps') ? parseInt(urlParams.get('fps'), 10) : null
             };
 
@@ -285,11 +285,28 @@
             }
         }
 
-        // Update URL with password without page reload (makes refresh auto-login work)
-        function updateUrlWithPassword(password) {
+        // rs-sdk: the password never stays in the address bar, history or anything sent to a
+        // server. A link brings it in the fragment (#password=..., which browsers never send),
+        // or ?password= from older links; it is moved into this tab's sessionStorage, so a
+        // refresh can still log in, and stripped from the URL.
+        function takeUrlPassword() {
             const url = new URL(window.location);
-            url.searchParams.set('password', password);
-            window.history.replaceState({}, '', url);
+            const hash = new URLSearchParams(url.hash.slice(1));
+            const fromUrl = hash.get('password') || url.searchParams.get('password');
+            if (fromUrl) {
+                try { sessionStorage.setItem('bot_session_password', fromUrl); } catch (e) {}
+                hash.delete('password');
+                url.searchParams.delete('password');
+                url.hash = hash.toString();
+                window.history.replaceState({}, '', url);
+                return fromUrl;
+            }
+            try { return sessionStorage.getItem('bot_session_password'); } catch (e) { return null; }
+        }
+
+        // Remember the password for refresh auto-login (this tab only, never in the URL)
+        function updateUrlWithPassword(password) {
+            try { sessionStorage.setItem('bot_session_password', password); } catch (e) {}
         }
 
         // Sync password field changes to URL
