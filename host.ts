@@ -156,6 +156,12 @@ Press Ctrl+C here to stop.
         say('Opening the Cloudflare tunnel...');
         let announced = false;
         start('tunnel', [cloudflared, 'tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${GATE_PORT}`], ROOT, {}, line => {
+            if (/lookup api\.trycloudflare\.com.*no such host/.test(line)) {
+                say(`Your DNS server refuses to look up trycloudflare.com (some internet providers block it),
+  so the free tunnel can't start. Switch to Cloudflare's DNS (1.1.1.1) or use a fixed address on
+  your own domain: see "If the tunnel says no such host" in HOSTING.md.`);
+                return;
+            }
             // The quick-tunnel address; api.trycloudflare.com only appears in errors.
             const match = /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/.exec(line);
             if (!match || announced) return;
