@@ -23,6 +23,7 @@ import { randomBytes } from 'crypto';
 import { parseEnvFile } from './pybridge/env';
 import { BUN, ENGINE_URL, GATEWAY_URL, LOGS, ROOT, createLauncher, ensureWebClient, isUp, waitUntil } from './launcher';
 import { ensureAccount, listAccounts, migrateDatabase, removeAccount } from './server/gate/accounts';
+import { encodeInvite } from './join';
 
 const GATE_PORT = 8890;
 const TUNNEL_FILE = join(LOGS, 'tunnel-url');
@@ -59,6 +60,21 @@ function tunnelHost(): string | null {
     }
 }
 
+/** The GitHub repository and branch this copy is pushed to, from the current branch's upstream. */
+function publishedRepo(): { owner: string; name: string; branch: string } | null {
+    const git = (...args: string[]) => {
+        const out = Bun.spawnSync(['git', ...args], { cwd: ROOT, stdout: 'pipe', stderr: 'ignore' });
+        return out.exitCode === 0 ? out.stdout.toString().trim() : '';
+    };
+    const upstream = git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}');
+    const slash = upstream.indexOf('/');
+    if (slash < 0) return null;
+    const remote = upstream.slice(0, slash);
+    const branch = upstream.slice(slash + 1);
+    const match = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(git('remote', 'get-url', remote));
+    return match ? { owner: match[1]!, name: match[2]!, branch } : null;
+}
+
 function migrate(): void {
     migrateDatabase();
 }
@@ -73,18 +89,34 @@ async function addAccount(command: 'add' | 'reset', name: string | undefined, pa
         process.exit(1);
     }
     const host = tunnelHost();
+    const code = encodeInvite({ name, password: pass, server: host ?? undefined });
+    const repo = publishedRepo();
     console.log(`${result === 'created' ? 'Created' : 'Reset the password of'} account "${name}".
+${host ? '' : '\nHosting is not running, so the invite has no server address yet. Start `bun host.ts` and add them again, or send the address later.\n'}
+Send your friend ONE of these privately (it contains their password):
+`);
+    if (repo) {
+        const raw = `https://raw.githubusercontent.com/${repo.owner}/${repo.name}/${repo.branch}`;
+        const git = `https://github.com/${repo.owner}/${repo.name}.git`;
+        console.log(`Linux / macOS, paste into a terminal:
 
-Send your friend this, to save as bots/${name}/bot.env in their copy of the game:
+  curl -fsSL ${raw}/install.sh | RS_REPO=${git} RS_BRANCH=${repo.branch} bash -s -- ${code}
 
-BOT_USERNAME=${name}
-PASSWORD=${pass}
-SERVER=${host ?? '<your tunnel address, printed by `bun host.ts`>'}
-SHOW_CHAT=true
-TELEMETRY=false
-${host ? '' : '\n(Start `bun host.ts` to get the tunnel address.)'}
-Then they run: bun play.ts ${name}
-The tunnel address changes every time you restart hosting; send them the new SERVER line when it does.`);
+Windows, paste into PowerShell:
+
+  $env:RS_REPO='${git}'; $env:RS_BRANCH='${repo.branch}'; $env:RS_INVITE='${code}'; irm ${raw}/install.ps1 | iex
+
+It installs everything, then they run: bun play.ts ${name}
+`);
+    } else {
+        console.log(`(Push this branch to GitHub to get a one-line installer here; see HOSTING.md.)
+`);
+    }
+    console.log(`Already installed? They run, in their copy of the game:
+
+  bun join.ts ${code}
+
+When you restart hosting the address changes. They update it with: bun join.ts --server <new address>`);
     process.exit(0);
 }
 
