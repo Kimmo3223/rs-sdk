@@ -79,7 +79,7 @@ const levelExperience = new Int32Array(99);
 let acc = 0;
 for (let i = 0; i < 99; i++) {
     const level = i + 1;
-    const delta = Math.floor(level + Math.pow(2.0, level / 10.0) * 300.0);
+    const delta = Math.floor(level + Math.pow(2.0, level / 7.0) * 300.0);
     acc += delta;
     levelExperience[i] = Math.floor(acc / 4) * 10;
 }

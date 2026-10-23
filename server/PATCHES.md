@@ -113,9 +113,9 @@ survival) is described in the project memory; this file is the human-readable ch
       staffmodlevel on non-production worlds** (public server safety).
 
 ### Gameplay / safety
-- [ ] **XP curve** — `entity/Player.ts` `getExpByLevel` table: delta uses `level/10.0`
-      (custom curve), table stored in ×10 "fine" units (`Math.floor(acc/4) * 10`), L99 =
-      10,701,400. **Duplicated in webclient — keep in sync (see below).**
+- [ ] **XP curve** — `entity/Player.ts` `getExpByLevel` table: delta uses `level/7.0`
+      (classic curve; rs-sdk used a flatter `level/10.0` until this fork restored it), table stored in ×10 "fine" units (`Math.floor(acc/4) * 10`), L99 =
+      130,344,310 (13,034,431 real XP). **Duplicated in webclient — keep in sync (see below).**
 - [ ] **`PlayerLoading.ts`** — clamp loaded levels to base levels.
 - [ ] **Anti-grief removals** — `MessagePrivateHandler.ts` / `ReportAbuseHandler.ts`: upstream's
       automated 2-day bans REMOVED (bots trip them).
@@ -338,7 +338,7 @@ Upgrade hazards:
       **Pairs with `src/lite/protocol/incoming.ts`**, which must increment the same field.
       Verify: `grep -n "mapFlagUnsetCount" src/client/Client.ts src/lite/protocol/incoming.ts`
       (two files, one increment each), plus `bun test src/bot/StateCollector.test.ts`.
-- [ ] **XP table** — `Client.ts` `levelExperience`: same `level/10.0` curve but **NO ×10**
+- [ ] **XP table** — `Client.ts` `levelExperience`: same `level/7.0` curve but **NO ×10**
       (client receives real xp; engine stores fine xp). Verify both formulas side-by-side after
       any sync touching `Player.ts` or `Client.ts`.
 - [ ] **AFK logout extended** to 10 minutes (upstream 90s logs idle bots out).

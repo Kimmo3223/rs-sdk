@@ -216,7 +216,7 @@ export class LiteClient {
             const level = i + 1;
             // Custom rs-sdk curve; must stay in sync with engine Player.ts
             // (which stores XP in x10 "fine" units) and Client.ts.
-            const delta = (level + Math.pow(2.0, level / 10.0) * 300.0) | 0;
+            const delta = (level + Math.pow(2.0, level / 7.0) * 300.0) | 0;
             acc += delta;
             table[i] = (acc / 4) | 0;
         }
