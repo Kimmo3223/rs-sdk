@@ -500,12 +500,12 @@ class AsyncBotMethods:
         """
         return await self._call("bot.waitForDialogClose", timeout)  # type: ignore[no-any-return]
 
-    async def wait_for_idle(self, timeout: float | None = None) -> None:
-        """``async waitForIdle(timeout: number = 10000): Promise<void>`` (bot.waitForIdle)
+    async def wait_for_idle(self, timeout: float | None = None, settle_ticks: float | None = None) -> None:
+        """``async waitForIdle(timeout: number = 60_000, settleTicks: number = 2): Promise<void>`` (bot.waitForIdle)
         
-        Wait for player to stop moving.
+        Wait until the player is doing nothing: not moving, not animating and not in combat, for `settleTicks` game ticks in a row (so a gap between two swings doesn't count). Throws if the player is still busy after `timeout` ms.
         """
-        return await self._call("bot.waitForIdle", timeout)  # type: ignore[no-any-return]
+        return await self._call("bot.waitForIdle", timeout, settle_ticks)  # type: ignore[no-any-return]
 
     async def navigate_dialog(self, choices: Any) -> None:
         """``async navigateDialog(choices: (number | string | RegExp)[]): Promise<void>`` (bot.navigateDialog)
@@ -1695,12 +1695,12 @@ class SyncBotMethods:
         """
         return self._call("bot.waitForDialogClose", timeout)  # type: ignore[no-any-return]
 
-    def wait_for_idle(self, timeout: float | None = None) -> None:
-        """``async waitForIdle(timeout: number = 10000): Promise<void>`` (bot.waitForIdle)
+    def wait_for_idle(self, timeout: float | None = None, settle_ticks: float | None = None) -> None:
+        """``async waitForIdle(timeout: number = 60_000, settleTicks: number = 2): Promise<void>`` (bot.waitForIdle)
         
-        Wait for player to stop moving.
+        Wait until the player is doing nothing: not moving, not animating and not in combat, for `settleTicks` game ticks in a row (so a gap between two swings doesn't count). Throws if the player is still busy after `timeout` ms.
         """
-        return self._call("bot.waitForIdle", timeout)  # type: ignore[no-any-return]
+        return self._call("bot.waitForIdle", timeout, settle_ticks)  # type: ignore[no-any-return]
 
     def navigate_dialog(self, choices: Any) -> None:
         """``async navigateDialog(choices: (number | string | RegExp)[]): Promise<void>`` (bot.navigateDialog)

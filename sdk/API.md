@@ -124,7 +124,7 @@
 |---|---|
 | `async waitForSkillLevel(skillName: string, targetLevel: number, timeout: number = 60000): Promise<SkillState>` | Wait until a skill reaches a target level. |
 | `async waitForInventoryItem(pattern: string \| RegExp, timeout: number = 30000): Promise<InventoryItem>` | Wait until an item appears in inventory. |
-| `async waitForIdle(timeout: number = 10000): Promise<void>` | Wait for player to stop moving. |
+| `async waitForIdle(timeout: number = 60_000, settleTicks: number = 2): Promise<void>` | Wait until the player is doing nothing: not moving, not animating and not in combat, for `settleTicks` game ticks in a row (so a gap between two swings doesn't count). Throws if the player is still busy after `timeout` ms. |
 
 ### Crafting & Smithing
 

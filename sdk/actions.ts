@@ -3344,22 +3344,40 @@ export class BotActions {
         await this.sdk.waitForCondition(s => !s.dialog.isOpen, timeout);
     }
 
-    /** Wait for player to stop moving. */
-    async waitForIdle(timeout: number = 10000): Promise<void> {
+    /**
+     * Wait until the player is doing nothing: not moving, not animating and not
+     * in combat, for `settleTicks` game ticks in a row (so a gap between two
+     * swings doesn't count). Throws if the player is still busy after `timeout` ms.
+     */
+    async waitForIdle(timeout: number = 60_000, settleTicks: number = 2): Promise<void> {
         const initialState = this.sdk.getState();
         if (!initialState?.player) {
             throw new Error('No player state');
         }
 
-        const initialX = initialState.player.x;
-        const initialZ = initialState.player.z;
+        let lastTick = initialState.tick;
+        let lastX = initialState.player.worldX;
+        let lastZ = initialState.player.worldZ;
+        let quietTicks = 0;
 
-        await this.sdk.waitForStateChange(timeout);
-
-        await this.sdk.waitForCondition(state => {
-            if (!state.player) return false;
-            return state.player.x === initialX && state.player.z === initialZ;
-        }, timeout);
+        try {
+            await this.sdk.waitForCondition(state => {
+                const player = state.player;
+                if (!player || state.tick === lastTick) return false;
+                const moved = player.worldX !== lastX || player.worldZ !== lastZ;
+                const busy = moved || player.animId !== -1 || player.combat?.inCombat === true;
+                quietTicks = busy ? 0 : quietTicks + 1;
+                lastTick = state.tick;
+                lastX = player.worldX;
+                lastZ = player.worldZ;
+                return quietTicks >= settleTicks;
+            }, timeout);
+        } catch (error) {
+            if (error instanceof Error && error.message === 'waitForCondition timed out') {
+                throw new Error(`waitForIdle timed out after ${timeout}ms: the player is still moving, animating or in combat`);
+            }
+            throw error;
+        }
     }
 
     // ============ Porcelain: Sequences ============
