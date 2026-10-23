@@ -132,7 +132,7 @@ async function main(): Promise<void> {
     // 5. The game client: a browser tab you can watch.
     // The password goes in the #fragment: browsers never send it to a server, and the page
     // removes it from the address bar at once.
-    const url = `${browserOrigin(env.SERVER)}/bot?bot=${encodeURIComponent(env.BOT_USERNAME ?? botName)}#password=${encodeURIComponent(env.PASSWORD ?? '')}`;
+    const url = `${browserOrigin(env.SERVER)}/bot?bot=${encodeURIComponent(env.BOT_USERNAME ?? botName)}#password=${encodeURIComponent(env.PASSWORD ?? '')}&bridge=${port}`;
     if (!(await bridgeHealth(port))?.clientAttached) {
         if (browser) {
             say('Opening the game in your browser. Keep that tab open while your bot plays.');

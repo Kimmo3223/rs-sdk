@@ -1,5 +1,6 @@
 import { playerSaveStore } from '#/engine/market/MarketStore.js';
 import { shareXp } from '#/engine/Clones.js';
+import type { SpectateReturn } from '#/engine/Spectate.js';
 import { PlayerInfoProt, Visibility } from '#/network/rsbuf/index.js';
 import { CollisionFlag, CollisionType } from '#/engine/routefinder/index.js';
 
@@ -194,6 +195,10 @@ export default class Player extends PathingEntity {
     // rs-sdk clones (engine/Clones.ts): the main account of the family this player is in.
     family: string | null = null;
     isClone: boolean = false;
+    // rs-sdk spectating (engine/Spectate.ts): who this player watches, and where they started.
+    spectating: Player | null = null;
+    spectateReturn: SpectateReturn | null = null;
+    spectatorHintTick: number = -100;
 
     /** Retry saved overflow when space becomes available, without dropping anything. */
     recoverItems() {
@@ -215,9 +220,11 @@ export default class Player extends PathingEntity {
         sav.p2(PlayerLoading.SAV_MAGIC); // magic
         sav.p2(PlayerLoading.SAV_VERSION); // version
 
-        sav.p2(this.x);
-        sav.p2(this.z);
-        sav.p1(this.level);
+        // A spectator is saved where they started watching, not where they are.
+        const pos = this.spectateReturn ?? this;
+        sav.p2(pos.x);
+        sav.p2(pos.z);
+        sav.p1(pos.level);
         for (let i = 0; i < 7; i++) {
             sav.p1(this.body[i]);
         }

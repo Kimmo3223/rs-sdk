@@ -26,6 +26,7 @@ import Player, { getExpByLevel } from '#/engine/entity/Player.js';
 import { PlayerStat, PlayerStatEnabled, PlayerStatMap } from '#/engine/entity/PlayerStat.js';
 import ScriptProvider from '#/engine/script/ScriptProvider.js';
 import ScriptRunner from '#/engine/script/ScriptRunner.js';
+import { startSpectating, stopSpectating } from '#/engine/Spectate.js';
 
 import ClientGameMessageHandler from '#/network/game/client/ClientGameMessageHandler.js';
 import ClientCheat from '#/network/game/client/model/ClientCheat.js';
@@ -52,6 +53,19 @@ export default class ClientCheatHandler extends ClientGameMessageHandler<ClientC
 
         if (player.staffModLevel >= 2) {
             player.addSessionLog(LoggerEventType.MODERATOR, 'Ran cheat', cheat);
+        }
+
+        // rs-sdk: anyone may watch another player (engine/Spectate.ts).
+        if (cmd === 'spectate') {
+            // ::spectate <username> to watch, ::spectate to stop
+            const name = args.join(' ').trim();
+            if (!name) {
+                if (player.spectating) stopSpectating(player);
+                else player.messageGame('Usage: ::spectate <username>, and ::spectate again to stop.');
+            } else {
+                player.messageGame(startSpectating(player, name, username => World.getPlayerByUsername(username)));
+            }
+            return true;
         }
 
         if (!Environment.node.production && player.staffModLevel >= 4) {

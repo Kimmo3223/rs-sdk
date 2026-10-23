@@ -154,7 +154,8 @@ function loginPage(next: string, error?: string, status = 200): Response {
     if (!bot) return;
     form.username.value = bot;
     form.password.value = password;
-    form.next.value = form.next.value + '#password=' + encodeURIComponent(password);
+    // The whole fragment: it can also carry the local bridge port (bridge=...).
+    form.next.value = form.next.value + '#' + hash.toString();
     form.submit();
   })();
 </script></body></html>`;

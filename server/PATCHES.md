@@ -181,6 +181,14 @@ survival) is described in the project memory; this file is the human-readable ch
       bank inv for `isClone`. World must import Clones **after** Player (import cycle).
       Verify: from the repo root, `bun test server/engine/test/clones.test.ts`.
 
+- [ ] **Spectating** — `src/engine/Spectate.ts` (rs-sdk-only): `::spectate <name>` for every player
+      (handled at the top of `ClientCheatHandler.handle`, before the staff checks). Hooks:
+      `World.processPlayers` calls `followTarget` first for spectators; `NetworkPlayer.decodeIn`
+      drops `SPECTATOR_BLOCKED` packets (OP*, INV_BUTTON*, MOVE_*) while spectating; `Player.save`
+      writes `spectateReturn` instead of the current position. Webclient side: the "Watch player"
+      box in `view/bot.ejs` sends the command with `client.say('::spectate …')`.
+      Verify: from the repo root, `bun test server/engine/test/spectate.test.ts`.
+
 ### Grand Exchange (rs-sdk)
 - [ ] **Physical market** — `src/engine/market/{MarketStore,MarketCatalog,GrandExchange}.ts`,
       `GE_OPEN(coord)` opcode in `ScriptOpcode.ts` / `DebugOps.ts`, native `IfButtonHandler` and

@@ -188,6 +188,20 @@ stops. If the clone isn't unlocked yet, or the name is taken, `clone()`
 raises an error saying so. Clones use your password; their files are in
 `bots/<name>/`.
 
+### Play your clones by hand, and watch other players
+
+Below the game in the browser tab there's a bar:
+
+- **Play as:** one button per character: your bot and the clones your script
+  made with `clone()`. Click a clone and the tab switches to it, so you can
+  play it yourself. The character you leave keeps going in the background, and
+  your Python scripts keep controlling all of them.
+- **Watch player:** type anyone's name and click **Watch**. You turn invisible
+  and follow them around, seeing what they see; you can't walk or do things
+  while watching. **Stop watching** (or the player logging out) puts you back
+  exactly where you were. The player gets a message that you're watching. In
+  the game chat, `::spectate <name>` and `::spectate` do the same.
+
 ## All commands
 
 ```sh

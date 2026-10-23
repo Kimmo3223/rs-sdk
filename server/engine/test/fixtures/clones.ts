@@ -26,7 +26,12 @@ createTables(database);
 database.query('INSERT INTO clone VALUES (?, ?)').run('kimmoc1', 'kimmo');
 database.query('INSERT INTO clone VALUES (?, ?)').run('kimmoc2', 'kimmo');
 
-const load = (name: string, save = new Uint8Array()) => PlayerLoading.load(name, new Packet(save), null);
+const TUTORIAL = VarPlayerType.getId('tutorial');
+const load = (name: string, save = new Uint8Array(), tutorialDone = true) => {
+    const player = PlayerLoading.load(name, new Packet(save), null);
+    if (tutorialDone && save.length === 0) player.vars[TUTORIAL] = 1000;
+    return player;
+};
 const reload = (player: InstanceType<typeof Player>) => load(player.username, player.save(false));
 
 // A clone can't play before its main has started the family.
@@ -40,6 +45,12 @@ main.addXp(PlayerStat.WOODCUTTING, getExpByLevel(99), false);
 main.getInventory(BANK)!.add(COINS, 1000);
 assert.equal(joinFamily(main), null);
 assert.equal(main.family, 'kimmo');
+
+// A clone still on Tutorial Island stays out: finishing the tutorial empties the bank.
+const newbie = load('kimmoc1', new Uint8Array(), false);
+assert.equal(joinFamily(newbie), null);
+assert.equal(newbie.family, null);
+assert.notEqual(newbie.getInventory(BANK), main.getInventory(BANK));
 
 // Clone 1 gets the family's levels and the very same bank.
 const clone = load('kimmoc1');

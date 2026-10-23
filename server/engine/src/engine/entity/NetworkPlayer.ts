@@ -35,6 +35,13 @@ import ClientGameProt from '#/network/game/client/ClientGameProt.js';
 import ClientGameProtRepository from '#/network/game/client/ClientGameProtRepository.js';
 import ServerGameProtRepository from '#/network/game/server/ServerGameProtRepository.js';
 
+// rs-sdk: game actions a spectator can't take while watching (engine/Spectate.ts).
+const SPECTATOR_BLOCKED = new Set<ClientGameProt>(
+    (Object.entries(ClientGameProt) as Array<[string, unknown]>)
+        .filter(([name, value]) => value instanceof ClientGameProt && /^(OPOBJ|OPNPC|OPLOC|OPPLAYER|OPHELD|INV_BUTTON|MOVE_)/.test(name))
+        .map(([, value]) => value as ClientGameProt)
+);
+
 export class NetworkPlayer extends Player {
     client: ClientSocket;
     userLimit = 0; // user packet limit
@@ -135,7 +142,12 @@ export class NetworkPlayer extends Player {
 
             if (decoder) {
                 const message = decoder.decode(NetworkPlayer.inBuf, this.client.waiting);
-                const success: boolean = ClientGameProtRepository.getHandler(packetType)?.handle(message, this) ?? false;
+                const spectating = this.spectating !== null && SPECTATOR_BLOCKED.has(packetType);
+                if (spectating && World.currentTick - this.spectatorHintTick > 10) {
+                    this.spectatorHintTick = World.currentTick;
+                    this.messageGame('You are watching someone. Type ::spectate to stop.');
+                }
+                const success: boolean = spectating ? false : (ClientGameProtRepository.getHandler(packetType)?.handle(message, this) ?? false);
 
                 // todo: move out of model
                 if (success && message.category === ClientGameProtCategory.USER_EVENT) {

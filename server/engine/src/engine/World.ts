@@ -51,6 +51,7 @@ import Obj from '#/engine/entity/Obj.js';
 import Player from '#/engine/entity/Player.js';
 // After Player: Clones uses Player's exports, and importing it first breaks the Player/NetworkPlayer cycle.
 import { joinFamily, leaveFamily, saveFamilies } from '#/engine/Clones.js';
+import { followTarget } from '#/engine/Spectate.js';
 import { PlayerLoading } from '#/engine/entity/PlayerLoading.js';
 import { PlayerQueueType } from '#/engine/entity/PlayerQueueRequest.js';
 import { PlayerStat, PlayerStatEnabled, PlayerStatNameMap } from '#/engine/entity/PlayerStat.js';
@@ -776,6 +777,8 @@ class World {
         for (const player of this.playerLoop.all()) {
             try {
                 if (player.delayed && this.currentTick >= player.delayedUntil) player.delayed = false;
+                // rs-sdk: a spectator keeps up with the player they watch.
+                if (player.spectating) followTarget(player, target => target.isActive && this.getPlayerByUsername(target.username) === target);
 
                 // - resume suspended script
                 if (!player.delayed && player.activeScript && player.activeScript.execution === ScriptState.SUSPENDED) {

@@ -15,6 +15,7 @@
 import { Database } from 'bun:sqlite';
 import { existsSync } from 'node:fs';
 import InvType from '#/cache/config/InvType.js';
+import VarPlayerType from '#/cache/config/VarPlayerType.js';
 // Type-only Player import, and no World import: Player imports this module.
 import type Player from '#/engine/entity/Player.js';
 import { getLevelByExp } from '#/engine/entity/Player.js';
@@ -23,6 +24,8 @@ import { Inventory } from '#/engine/Inventory.js';
 
 export const LEVELS_PER_CLONE = 100;
 const XP_CAP = 2_000_000_000;
+// ^tutorial_complete in content/scripts/general/configs/quest.constant.
+const TUTORIAL_COMPLETE = 1000;
 
 type Family = { main: string; stats: number[]; bank: Inventory; members: Set<Player> };
 type FamilyRow = { stats: string; bank: string };
@@ -110,6 +113,11 @@ export function joinFamily(player: Player, online: (username: string) => Player 
     } else {
         return null;
     }
+
+    // Finishing the tutorial empties the bank (tutorial.rs2 inv_clear(bank)). A character
+    // in the family would empty the shared bank, so it joins only once it is done.
+    const tutorial = VarPlayerType.getId('tutorial');
+    if (tutorial !== -1 && player.vars[tutorial] < TUTORIAL_COMPLETE) return null;
 
     let family = families.get(main);
     let created = false;

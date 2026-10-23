@@ -408,6 +408,14 @@
             <span class="green" id="player-count">0 online</span>
         </div>
 
+        <!-- rs-sdk: switch between your clones, and watch other players -->
+        <div class="centered" id="family-bar" style="display: none; margin-top: 4px;">
+            <span id="family-switcher" style="display: none;">Play as: <span id="family-members"></span> | </span>
+            Watch player: <input type="text" id="spectate-name" placeholder="name" maxlength="12" size="10" onkeydown="if (event.key === 'Enter') spectatePlayer();">
+            <button onclick="spectatePlayer();">Watch</button>
+            <button onclick="stopSpectating();">Stop watching</button>
+        </div>
+
         <!-- Bot Controls -->
         <div id="bot-controls">
             <div>
@@ -805,6 +813,90 @@
         }
         updatePlayerCount();
         setInterval(updatePlayerCount, 30000);
+
+        // rs-sdk: the bridge of the bot this tab was opened for (play.ts puts its port in
+        // the link's #fragment) lists the main and its clones and moves the tab between them.
+        function bridgePort() {
+            const hash = new URLSearchParams(location.hash.slice(1));
+            const fromLink = hash.get('bridge');
+            if (fromLink) {
+                try { sessionStorage.setItem('bot_bridge_port', fromLink); } catch (e) {}
+                hash.delete('bridge');
+                const url = new URL(location);
+                url.hash = hash.toString();
+                history.replaceState({}, '', url);
+            }
+            try { return sessionStorage.getItem('bot_bridge_port') || '8765'; } catch (e) { return fromLink || '8765'; }
+        }
+        const BRIDGE = 'http://127.0.0.1:' + bridgePort();
+
+        function currentBot() {
+            return (new URLSearchParams(location.search).get('bot') || '').toLowerCase();
+        }
+
+        async function refreshFamily() {
+            const bar = document.getElementById('family-bar');
+            bar.style.display = clientInstance?.ingame ? 'block' : 'none';
+            let family = null;
+            try {
+                const res = await fetch(BRIDGE + '/family', { signal: AbortSignal.timeout(2000) });
+                const body = await res.json();
+                if (body.ok) family = body.result;
+            } catch (e) {}
+            const switcher = document.getElementById('family-switcher');
+            // Always offer the way back to the main, even if this tab's character is missing
+            // from the list (say, its clone process stopped).
+            const names = family ? [...family.members] : [];
+            if (family && !names.includes(currentBot()) && currentBot()) names.push(currentBot());
+            if (names.length < 2) {
+                switcher.style.display = 'none';
+                return;
+            }
+            const members = document.getElementById('family-members');
+            members.textContent = '';
+            for (const name of names) {
+                const button = document.createElement('button');
+                button.textContent = name + (name === family.main ? ' (main)' : '');
+                if (name === currentBot()) {
+                    button.disabled = true;
+                    button.style.background = '#04A800';
+                } else {
+                    button.onclick = () => switchCharacter(name);
+                }
+                members.appendChild(button);
+            }
+            switcher.style.display = 'inline';
+        }
+
+        async function switchCharacter(name) {
+            document.getElementById('bot-status').textContent = 'Switching to ' + name + '...';
+            try {
+                const res = await fetch(BRIDGE + '/switch', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ to: name }),
+                });
+                const body = await res.json();
+                if (!body.ok) throw new Error(body.error);
+                // Clones use the main's password, which this tab already has.
+                updateUrlWithBot(name);
+                location.reload();
+            } catch (e) {
+                document.getElementById('bot-status').textContent = 'Could not switch: ' + e.message;
+            }
+        }
+        window.switchCharacter = switchCharacter;
+
+        window.spectatePlayer = function() {
+            const name = document.getElementById('spectate-name').value.trim();
+            if (name && clientInstance?.say) clientInstance.say('::spectate ' + name);
+        };
+        window.stopSpectating = function() {
+            if (clientInstance?.say) clientInstance.say('::spectate');
+        };
+
+        refreshFamily();
+        setInterval(refreshFamily, 5000);
 
         loadSettings();
     </script>

@@ -7,6 +7,11 @@
 // linked directly in the server's files; on a hosted one the gate makes it
 // (POST /gate/clone, signed in with the main's name and password).
 // Clone processes stop when this bridge stops.
+//
+// The browser game tab can switch between the main and its clones (GET /family,
+// POST /switch {"to"}): the character it switches to loses its headless client
+// (the tab logs in as it instead), and the one it leaves gets a headless client,
+// so every character stays online and every bridge keeps working.
 
 import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -73,6 +78,13 @@ export function createCloneManager(options: CloneManagerOptions) {
     const { main, repoRoot, log } = options;
     const logsDir = join(repoRoot, '.play-logs');
     const running = new Map<string, Running>();
+    // Clones that finished starting; only these can be switched to (a switch takes away
+    // a clone's headless client, which would look like a failed login mid-start).
+    const ready = new Set<string>();
+    // Which character the browser tab shows; play.ts opens it on the main.
+    let viewing = main.username.toLowerCase();
+    // The main's headless client, while the tab shows a clone.
+    let mainClient: Subprocess | null = null;
     // One clone at a time, so two calls can't pick the same port.
     let chain: Promise<unknown> = Promise.resolve();
 
@@ -172,28 +184,25 @@ export function createCloneManager(options: CloneManagerOptions) {
         }
 
         const bridge = spawn(`bridge-${name}`, [process.execPath, join(repoRoot, 'pybridge', 'server.ts'), name, '--port', String(port)], repoRoot);
-        const client = spawn(`lite-${name}`, [process.execPath, 'src/lite/runner.ts', name], webclient);
-        const procs = [bridge, client];
-        running.set(name, { port, procs });
-        let exited = false;
-        for (const proc of procs) void proc.exited.then(() => { exited = true; });
-
-        const attached = await waitFor(async () => exited || Boolean((await health(port))?.clientAttached), 3 * 60_000);
-        if (!attached || exited) {
-            for (const proc of procs) proc.kill('SIGINT');
+        const startClient = () => headlessClient(name);
+        const entry: Running = { port, procs: [bridge, startClient()] };
+        running.set(name, entry);
+        const stop = () => {
+            for (const proc of entry.procs) proc.kill('SIGINT');
             running.delete(name);
+            ready.delete(name);
+        };
+        const alive = () => entry.procs.every(proc => proc.exitCode === null && !proc.killed);
+        const loggedIn = () => waitFor(async () => !alive() || Boolean((await health(port))?.clientAttached), 3 * 60_000)
+            .then(ok => ok && alive());
+
+        if (!(await loggedIn())) {
+            stop();
             throw new Error(`${name}'s game client did not log in. See .play-logs/lite-${name}.log and .play-logs/bridge-${name}.log`);
         }
 
-        // A clone the game won't let play yet is told why and logged out after a few seconds.
-        await Bun.sleep(6000);
-        if (exited || !(await health(port))?.clientAttached) {
-            for (const proc of procs) proc.kill('SIGINT');
-            running.delete(name);
-            throw new Error(`The game logged ${name} out: it is probably locked (one clone per 100 total level of ${main.username}). See .play-logs/lite-${name}.log`);
-        }
-
-        // New characters start on Tutorial Island.
+        // New characters start on Tutorial Island. A clone joins its family (shared bank
+        // and XP) only after the tutorial, which empties the bank: skip it, then log in again.
         const call = async (method: string, args: unknown[] = []) => {
             const res = await fetch(`http://127.0.0.1:${port}/call`, { method: 'POST', body: JSON.stringify({ method, args }) });
             return res.json() as Promise<{ ok: boolean; result?: any; error?: string }>;
@@ -201,8 +210,32 @@ export function createCloneManager(options: CloneManagerOptions) {
         const guide = await call('sdk.findNearbyNpc', [{ $regex: '^RuneScape Guide$', flags: 'i' }]);
         if (guide.ok && guide.result) {
             log(`Skipping the tutorial for ${name}...`);
-            await call('bot.skipTutorial');
+            const skip = await call('bot.skipTutorial');
+            if (!skip.ok || !skip.result?.success) {
+                stop();
+                throw new Error(`Could not skip ${name}'s tutorial: ${skip.error ?? skip.result?.message}`);
+            }
+            log(`Logging ${name} in again to join ${main.username}'s family...`);
+            const old = entry.procs[1]!;
+            old.kill('SIGINT');
+            await old.exited;
+            await Bun.sleep(3000);
+            entry.procs[1] = startClient();
+            // Let the bridge see the old client's ticks go stale before waiting for the new one.
+            await Bun.sleep(12_000);
+            if (!(await loggedIn())) {
+                stop();
+                throw new Error(`${name}'s game client did not log in again. See .play-logs/lite-${name}.log`);
+            }
         }
+
+        // A clone the game won't let play yet is told why and logged out after a few seconds.
+        await Bun.sleep(6000);
+        if (!alive() || !(await health(port))?.clientAttached) {
+            stop();
+            throw new Error(`The game logged ${name} out: it is probably locked (one clone per 100 total level of ${main.username}). See .play-logs/lite-${name}.log`);
+        }
+        ready.add(name);
         return port;
     }
 
@@ -221,7 +254,57 @@ export function createCloneManager(options: CloneManagerOptions) {
         return { name, port };
     }
 
+    function family() {
+        return { main: main.username.toLowerCase(), members: [main.username.toLowerCase(), ...ready], viewing };
+    }
+
+    function headlessClient(name: string): Subprocess {
+        const dir = name === main.username.toLowerCase() ? options.mainDir : name;
+        return spawn(`lite-${name}`, [process.execPath, 'src/lite/runner.ts', dir], join(repoRoot, 'server', 'webclient'));
+    }
+
+    function switchTo(to: string): void {
+        to = to.toLowerCase();
+        const isMain = to === main.username.toLowerCase();
+        if (!isMain && !ready.has(to)) throw new Error(`${to} is not one of ${main.username}'s clones that are in the game`);
+        if (to === viewing) return;
+        const from = viewing;
+
+        // The tab is about to log in as `to`: its headless client steps aside.
+        if (isMain) {
+            mainClient?.kill('SIGINT');
+            mainClient = null;
+        } else {
+            running.get(to)!.procs[1]?.kill('SIGINT');
+        }
+        viewing = to;
+        log(`Browser tab switches from ${from} to ${to}.`);
+
+        // Once the tab has left `from`, a headless client keeps it in the game.
+        setTimeout(() => {
+            if (viewing === from) return;
+            if (from === main.username.toLowerCase()) {
+                mainClient = headlessClient(from);
+            } else {
+                const entry = running.get(from);
+                if (entry) entry.procs[1] = headlessClient(from);
+            }
+        }, 5000);
+    }
+
     return {
+        /** GET /family and POST /switch, for the browser game tab (CORS-checked by the caller). */
+        async handleBrowser(req: Request, path: string): Promise<Response> {
+            if (path === '/family') return json({ ok: true, result: family() });
+            const body = await req.json().catch(() => null) as { to?: unknown } | null;
+            try {
+                if (typeof body?.to !== 'string') throw new Error('"to" must be a character name');
+                switchTo(body.to);
+                return json({ ok: true, result: family() });
+            } catch (error) {
+                return json({ ok: false, error: (error as Error).message }, 409);
+            }
+        },
         async handle(req: Request): Promise<Response> {
             const body = await req.json().catch(() => null) as { name?: unknown } | null;
             const work = chain.then(() => make(body?.name as string));
@@ -235,6 +318,9 @@ export function createCloneManager(options: CloneManagerOptions) {
         stopAll(): void {
             for (const { procs } of running.values()) for (const proc of procs) proc.kill('SIGINT');
             running.clear();
+            ready.clear();
+            mainClient?.kill('SIGINT');
+            mainClient = null;
         },
     };
 }
