@@ -90,26 +90,60 @@ bun play.ts mybot
 New bots get an account automatically. A bot whose password is shorter than 8
 characters is skipped: change `PASSWORD` in its `bot.env`.
 
-## 3. Add a friend
+## 3. Put your version on GitHub (once)
+
+Friends' installer downloads the game from GitHub, and it needs **your**
+version (with the Python bridge, `play.ts` and hosting), not the original.
+You need a GitHub account. The installer downloads without logging in, so the
+repository must be **public**. Bot passwords, `bot.env` files, saves and the
+account database are never committed (`.gitignore` covers them).
+
+```sh
+nix shell nixpkgs#gh                     # or install GitHub's gh tool another way
+gh auth login                            # log in with your browser
+gh repo fork MaxBittker/rs-sdk --remote --remote-name fork
+git push -u fork python-bridge
+```
+
+After pushing changes later, run `git push` again; friends get them by
+running their install command again.
+
+## 4. Add a friend
 
 ```sh
 bun host.ts add alice
 ```
 
-It prints a `bot.env` to send them (by private message, not in a public
-channel: it contains their password). Your friend:
+It prints a **one-line install command** with alice's invite code (name,
+password and your server address). Send it to her privately, because it
+contains her password. She pastes it into a terminal:
 
-1. installs Git, Bun and Python and gets the game (steps 1–2 of
-   [PYTHON.md](PYTHON.md)),
-2. saves the file as `bots/alice/bot.env`,
-3. runs `bun play.ts alice`.
+- **Linux / macOS:** `curl -fsSL …/install.sh | … bash -s -- <code>`
+- **Windows:** the PowerShell line it prints (`… irm …/install.ps1 | iex`)
 
-`play.ts` sees that the server is somewhere else and doesn't start one. It
-opens the game in their browser, which signs them in with the same account,
-and they write bots exactly as in PYTHON.md.
+The installer:
+- installs Git, Python and Bun if they're missing (it may ask for her
+  password once to install system packages);
+- downloads the game into `~/rs-sdk`;
+- installs everything and saves her `bot.env`.
 
-When you restart hosting, the address changes: send friends the new `SERVER=`
-line.
+Then she runs:
+
+```sh
+cd ~/rs-sdk
+bun play.ts alice
+```
+
+It sees that the server is yours and doesn't start one. It opens the game in
+her browser, signed in, and she writes bots exactly as in
+[PYTHON.md](PYTHON.md).
+
+When you restart hosting, the free tunnel's address changes. Friends then
+run `bun join.ts --server <new address>` (`bun host.ts` prints the address).
+Someone who already has the game can join with `bun join.ts <code>`.
+
+On NixOS the installer can't install system packages. Friends on NixOS run
+it inside `nix-shell -p git python3 curl unzip bun`.
 
 ### Managing accounts
 
