@@ -1,4 +1,5 @@
 import { playerSaveStore } from '#/engine/market/MarketStore.js';
+import { shareXp } from '#/engine/Clones.js';
 import { PlayerInfoProt, Visibility } from '#/network/rsbuf/index.js';
 import { CollisionFlag, CollisionType } from '#/engine/routefinder/index.js';
 
@@ -190,6 +191,9 @@ export default class Player extends PathingEntity {
     // Only containers holding player-owned assets belong here; crafting previews do not.
     static readonly RECOVERABLE_INVENTORIES = ['tradeoffer', 'dueloffer', 'duelwinnings', 'partyroom_tempinv', 'deathkeep', 'trail_rewardinv', 'trawler_rewardinv', 'duelarrows'];
     recoveryItems: { id: number; count: number }[] = [];
+    // rs-sdk clones (engine/Clones.ts): the main account of the family this player is in.
+    family: string | null = null;
+    isClone: boolean = false;
 
     /** Retry saved overflow when space becomes available, without dropping anything. */
     recoverItems() {
@@ -251,6 +255,10 @@ export default class Player extends PathingEntity {
         for (const [typeId, inventory] of this.invs) {
             const invType = InvType.get(typeId);
             if (invType.scope !== InvType.SCOPE_PERM) {
+                continue;
+            }
+            // rs-sdk: a clone's bank is the family bank, saved in data/clones.sqlite.
+            if (this.isClone && invType.debugname === 'bank') {
                 continue;
             }
 
@@ -1951,6 +1959,8 @@ export default class Player extends PathingEntity {
             this.combatLevel = this.getCombatLevel();
             this.buildAppearance(this.appearanceInv);
         }
+
+        shareXp(this, stat, xp * multi);
     }
 
     changeStat(stat: number) {

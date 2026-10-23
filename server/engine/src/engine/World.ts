@@ -49,6 +49,8 @@ import { NpcEventRequest, NpcEventType } from '#/engine/entity/NpcEventRequest.j
 import { NpcStat } from '#/engine/entity/NpcStat.js';
 import Obj from '#/engine/entity/Obj.js';
 import Player from '#/engine/entity/Player.js';
+// After Player: Clones uses Player's exports, and importing it first breaks the Player/NetworkPlayer cycle.
+import { joinFamily, leaveFamily, saveFamilies } from '#/engine/Clones.js';
 import { PlayerLoading } from '#/engine/entity/PlayerLoading.js';
 import { PlayerQueueType } from '#/engine/entity/PlayerQueueRequest.js';
 import { PlayerStat, PlayerStatEnabled, PlayerStatNameMap } from '#/engine/entity/PlayerStat.js';
@@ -1130,7 +1132,22 @@ class World {
             player.moveClickRequest = false;
 
             this.gameMap.getZone(player.x, player.z, player.level).enter(player);
+            // rs-sdk clones: shared XP and bank are set before onLogin sends them.
+            let cloneLocked: string | null = null;
+            try {
+                cloneLocked = joinFamily(player, name => {
+                    const other = this.getPlayerByUsername(name);
+                    return other && other.isActive ? other : null;
+                });
+            } catch (err) {
+                printError(`Clones: ${player.username} could not join their family: ${err}`);
+            }
             player.onLogin();
+            if (cloneLocked) {
+                player.messageGame(cloneLocked);
+                player.loggingOut = true;
+                player.preventLogoutUntil = this.currentTick + 8;
+            }
 
             if (this.shutdownTick != -1) {
                 player.write(new UpdateRebootTimer(this.shutdownTick - this.currentTick));
@@ -1461,7 +1478,20 @@ class World {
         if (store) store.db.transaction(() => {
             for (const [owner, save] of saves) store.checkpoint(owner, save, true);
         }).immediate();
+        try {
+            saveFamilies();
+        } catch (err) {
+            printError(`Clones: saving shared banks failed: ${err}`);
+        }
         return saves;
+    }
+
+    private leaveCloneFamily(player: Player): void {
+        try {
+            leaveFamily(player);
+        } catch (err) {
+            printError(`Clones: saving ${player.username}'s family failed: ${err}`);
+        }
     }
 
     enqueueScript(script: ScriptState, delay: number = 0): void {
@@ -1849,6 +1879,7 @@ class World {
 
         player.addSessionLog(LoggerEventType.MODERATOR, 'Logged out');
         this.flushPlayer(player);
+        this.leaveCloneFamily(player);
 
         this.friendThread.postMessage({
             type: 'player_logout',
@@ -1879,6 +1910,7 @@ class World {
 
         player.addSessionLog(LoggerEventType.MODERATOR, 'Logged out (session takeover)');
         // Don't call flushPlayer - state is already transferred to the new session
+        this.leaveCloneFamily(player);
 
         this.friendThread.postMessage({
             type: 'player_logout',

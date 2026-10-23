@@ -171,6 +171,16 @@ survival) is described in the project memory; this file is the human-readable ch
       the script. Verify: `HEADLESS=true bun sdk/test/alkharid-gate-choice-resume.ts`.
 
 
+- [ ] **Clones** — `src/engine/Clones.ts` (rs-sdk-only): main + clone accounts share one bank
+      and one set of skill XP; one clone per 100 family total level. State in
+      `data/clones.sqlite` (`CLONES_DATABASE`), links written by root `host.ts clone` via
+      `server/gate/clones.ts`. Hooks: `World.processLogins` calls `joinFamily` right before
+      `player.onLogin()` (locked clones get a message and `loggingOut`); `removePlayer` (after
+      `flushPlayer`) and `removePlayerWithoutSave` call `leaveCloneFamily`; `checkpointPlayers`
+      calls `saveFamilies()`. `Player.addXp` ends with `shareXp(...)`; `Player.save` skips the
+      bank inv for `isClone`. World must import Clones **after** Player (import cycle).
+      Verify: from the repo root, `bun test server/engine/test/clones.test.ts`.
+
 ### Grand Exchange (rs-sdk)
 - [ ] **Physical market** — `src/engine/market/{MarketStore,MarketCatalog,GrandExchange}.ts`,
       `GE_OPEN(coord)` opcode in `ScriptOpcode.ts` / `DebugOps.ts`, native `IfButtonHandler` and

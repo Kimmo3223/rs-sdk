@@ -16,6 +16,7 @@ import { initPathfinding } from '../sdk/pathfinding';
 import { loadBotEnv } from './env';
 import { createBridge } from './bridge';
 import { buildMethodTable } from './methods';
+import { createCloneManager } from './clones';
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 8765;
@@ -71,6 +72,16 @@ const sdk = new BotSDK({
 const bot = new BotActions(sdk);
 const table = await buildMethodTable();
 const bridge = createBridge({ sdk, bot, username: env.username, methods: table.methods, excluded: table.excluded });
+const clones = createCloneManager({
+    main: env,
+    mainDir: botName,
+    repoRoot,
+    mainHealth: async () => {
+        const body = await (await bridge.fetch(new Request('http://bridge/health'))).json() as { ok: boolean; result?: { bot: string; clientAttached: boolean } };
+        return body.ok ? body.result ?? null : null;
+    },
+    log: message => console.error(`[pybridge] ${message}`),
+});
 
 // Listen before connecting so /health answers while the gateway is still
 // coming up. idleTimeout 0: a call lasts as long as the SDK's own timeouts.
@@ -78,7 +89,8 @@ const server = Bun.serve({
     hostname: HOST,
     port,
     idleTimeout: 0,
-    fetch: req => bridge.fetch(req),
+    // POST /clone {"name"} makes and starts a clone of this bot (pybridge/clones.ts).
+    fetch: req => (req.method === 'POST' && new URL(req.url).pathname === '/clone' ? clones.handle(req) : bridge.fetch(req)),
 });
 console.error(`[pybridge] Bot "${env.username}" listening on http://${HOST}:${server.port} (gateway ${env.gatewayUrl})`);
 
@@ -107,6 +119,7 @@ async function shutdown(code: number): Promise<never> {
     if (shuttingDown) process.exit(code);
     shuttingDown = true;
     console.error('[pybridge] Shutting down...');
+    clones.stopAll();
     bridge.close();
     server.stop(true);
     setTimeout(() => process.exit(code), 5000).unref();

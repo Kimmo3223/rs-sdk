@@ -153,6 +153,39 @@ bun host.ts reset alice       # new password (prints a new bot.env)
 bun host.ts remove alice      # delete the account; their character's save file stays
 ```
 
+### Clones
+
+Every 100 total levels unlock one clone: an extra character that shares its
+main's **bank** and **skill XP** but has its own inventory, equipment,
+position and quests. XP any of them earns goes to all of them, so a clone
+grinding fishing levels up its main too (and the main's total level unlocks
+more clones).
+
+Friends make their own from Python with `bot.clone("name")` (see
+[PYTHON.md](PYTHON.md)): their bot asks the sign-in gate, using its own name
+and password, and the gate makes the clone account if one is unlocked. You can
+also make them by hand:
+
+```sh
+bun host.ts clone alice           # make alice a clone (named alicec1, alicec2, ...)
+bun host.ts clone alice alicefish # or pick the name
+bun host.ts clones                # who has clones and which are unlocked
+bun host.ts unclone alicefish     # back to a normal account (the bank stays with alice)
+```
+
+For a friend it prints an invite for the clone, like `add`. For one of your
+own bots it makes a `bots/<clone>/` folder, so you run it with
+`bun play.ts <clone>`. Each clone runs as its own bot, at the same time as
+the main.
+
+- The main has to log in once after its first clone is made; that copies
+  its XP and bank into the shared family. A clone that logs in too early, or
+  before its main has the total level for it (clone 2 needs 200, and so on),
+  gets a message saying why and is logged out.
+- Clones unlock in the order they were made.
+- The shared XP and bank are kept in `server/engine/data/clones.sqlite`. Back it
+  up with the rest of the world, and don't delete it while clones exist.
+
 ### Who visited or tried to sign in
 
 ```sh

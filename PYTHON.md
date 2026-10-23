@@ -160,6 +160,34 @@ while True:
 
 Stop it with Ctrl+C.
 
+### Clones
+
+Every 100 total levels unlock a **clone**: a second character that shares
+your bank and your skill XP (whatever either of you trains levels up both)
+but has its own backpack, gear and position. Make one from your script:
+
+```python
+import threading
+import rs
+
+bot = rs.connect_sync("mybot")
+jaska = bot.clone("jaska")    # makes "jaska" the first time, reuses it after
+
+def fish():
+    while True:
+        jaska.interact_npc("fishing spot", "net")
+
+threading.Thread(target=fish, daemon=True).start()   # jaska fishes...
+while True:
+    bot.chop_tree()                                   # ...while you chop
+```
+
+`clone()` takes up to a minute: it starts the clone's own game client (no
+browser tab) and skips its tutorial. The clone stops when your `play.ts`
+stops. If the clone isn't unlocked yet, or the name is taken, `clone()`
+raises an error saying so. Clones use your password; their files are in
+`bots/<name>/`.
+
 ## All commands
 
 ```sh

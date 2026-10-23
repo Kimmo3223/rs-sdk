@@ -6,6 +6,9 @@
 //   bun host.ts reset <name> [pass]  give an account a new password
 //   bun host.ts remove <name>        delete an account (its save file stays)
 //   bun host.ts list                 list accounts
+//   bun host.ts clone <main> [name]  give an account a clone (shared bank and XP; 1 per 100 total level)
+//   bun host.ts clones               list clones and which are unlocked
+//   bun host.ts unclone <name>       turn a clone back into a normal account
 //   bun host.ts log [--follow]       who visited, signed in or failed to (add --follow to watch live)
 //
 // Without options the tunnel is a free "quick tunnel" whose address changes on
@@ -23,7 +26,8 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { parseEnvFile } from './pybridge/env';
 import { BUN, ENGINE_URL, GATEWAY_URL, LOGS, ROOT, createLauncher, ensureWebClient, isUp, waitUntil } from './launcher';
-import { ensureAccount, listAccounts, migrateDatabase, removeAccount } from './server/gate/accounts';
+import { ensureAccount, listAccounts, migrateDatabase, removeAccount, toSafeName } from './server/gate/accounts';
+import { describeFamily, families, family, linkClone, mainOf, nextCloneName, unlinkClone } from './server/gate/clones';
 import { encodeInvite } from './join';
 
 const GATE_PORT = 8890;
@@ -43,7 +47,7 @@ const HOST_ENGINE_ENV: Record<string, string> = {
 };
 
 function usage(): never {
-    console.error('Usage:\n  bun host.ts [--tunnel <name> --hostname <host>]\n  bun host.ts add <name> [password]\n  bun host.ts reset <name> [password]\n  bun host.ts remove <name>\n  bun host.ts list\n  bun host.ts log [--follow]');
+    console.error('Usage:\n  bun host.ts [--tunnel <name> --hostname <host>]\n  bun host.ts add <name> [password]\n  bun host.ts reset <name> [password]\n  bun host.ts remove <name>\n  bun host.ts list\n  bun host.ts clone <main> [name]\n  bun host.ts clones\n  bun host.ts unclone <name>\n  bun host.ts log [--follow]');
     process.exit(2);
 }
 
@@ -89,10 +93,15 @@ async function addAccount(command: 'add' | 'reset', name: string | undefined, pa
         console.log(`Account "${name}" already exists. Use \`bun host.ts reset ${name}\` to give it a new password.`);
         process.exit(1);
     }
+    printInvite(`${result === 'created' ? 'Created' : 'Reset the password of'} account "${name}".`, name, pass);
+    process.exit(0);
+}
+
+function printInvite(heading: string, name: string, pass: string): void {
     const host = tunnelHost();
     const code = encodeInvite({ name, password: pass, server: host ?? undefined });
     const repo = publishedRepo();
-    console.log(`${result === 'created' ? 'Created' : 'Reset the password of'} account "${name}".
+    console.log(`${heading}
 ${host ? '' : '\nHosting is not running, so the invite has no server address yet. Start `bun host.ts` and add them again, or send the address later.\n'}
 Send your friend ONE of these privately (it contains their password):
 `);
@@ -118,6 +127,68 @@ It installs everything, then they run: bun play.ts ${name}
   bun join.ts ${code}
 
 When you restart hosting the address changes. They update it with: bun join.ts --server <new address>`);
+}
+
+/** The bot.env of one of your own local bots, by account name. */
+function localBot(name: string): { dir: string; env: Record<string, string> } | null {
+    const botsDir = join(ROOT, 'bots');
+    for (const entry of readdirSync(botsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('_')) continue;
+        const envPath = join(botsDir, entry.name, 'bot.env');
+        if (!existsSync(envPath)) continue;
+        const env = parseEnvFile(readFileSync(envPath, 'utf8'));
+        const local = !env.SERVER || env.SERVER.startsWith('localhost') || env.SERVER.startsWith('127.');
+        if (local && env.BOT_USERNAME && toSafeName(env.BOT_USERNAME) === name) return { dir: join(botsDir, entry.name), env };
+    }
+    return null;
+}
+
+async function cloneAccount(mainName: string | undefined, cloneName: string | undefined): Promise<void> {
+    if (!mainName) usage();
+    migrate();
+    const main = toSafeName(mainName);
+    const accounts = listAccounts();
+    const mainBot = localBot(main);
+    if (!accounts.includes(main) && !mainBot) {
+        console.log(`No account "${main}". Create it first with \`bun host.ts add ${main}\`.`);
+        process.exit(1);
+    }
+    const name = cloneName ?? nextCloneName(main, n => accounts.includes(n) || existsSync(join(ROOT, 'bots', n)) || mainOf(n) !== null);
+    try {
+        linkClone(main, name);
+    } catch (error) {
+        console.log((error as Error).message);
+        process.exit(1);
+    }
+
+    try {
+        const status = () => describeFamily(family(main));
+        if (mainBot) {
+            // Your own bot: the clone gets a bot folder like any of your bots.
+            let cloneBot = localBot(toSafeName(name));
+            if (!cloneBot) {
+                const made = Bun.spawnSync([BUN, join(ROOT, 'bots', 'create-bot.ts'), name, '--local'], { cwd: ROOT, stdout: 'ignore', stderr: 'inherit' });
+                cloneBot = localBot(toSafeName(name));
+                if (made.exitCode !== 0 || !cloneBot) throw new Error('bots/create-bot.ts could not create the bot folder');
+            }
+            await ensureAccount(name, cloneBot.env.PASSWORD!);
+            console.log(`${toSafeName(name)} is now a clone of ${main}. Its bot folder is ${cloneBot.dir.slice(ROOT.length + 1)}; play it with: bun play.ts ${name}
+
+${status()}`);
+        } else {
+            const pass = newPassword();
+            const result = await ensureAccount(name, pass);
+            if (result === 'exists') {
+                console.log(`Linked the existing account "${toSafeName(name)}" as a clone of ${main}. Its password is unchanged.\n\n${status()}`);
+            } else {
+                printInvite(`Created "${toSafeName(name)}", a clone of ${main}. Send it to ${main}'s owner.\n\n${status()}\n`, name, pass);
+            }
+        }
+    } catch (error) {
+        unlinkClone(name);
+        console.log(`Could not create the clone: ${(error as Error).message}`);
+        process.exit(1);
+    }
     process.exit(0);
 }
 
@@ -222,7 +293,7 @@ This address changes when you restart hosting. Press Ctrl+C here to stop.
 const ACCESS_LOG = join(LOGS, 'access.log');
 const ENGINE_LOG = join(LOGS, 'engine.log');
 const LABELS: Record<string, string> = {
-    visit: 'visit', signin: 'SIGNED IN', signin_failed: 'SIGN-IN FAILED', locked_out: 'LOCKED OUT', connect: 'connected',
+    visit: 'visit', signin: 'SIGNED IN', signin_failed: 'SIGN-IN FAILED', locked_out: 'LOCKED OUT', connect: 'connected', clone: 'NEW CLONE',
 };
 
 function formatAccess(line: string): string | null {
@@ -296,6 +367,17 @@ if (!command || command.startsWith('--')) {
     if (!name) usage();
     migrate();
     console.log(removeAccount(name) ? `Removed account "${name}". Its character save file is kept.` : `No account "${name}".`);
+    if (unlinkClone(name)) console.log(`It is no longer a clone.`);
+    process.exit(0);
+} else if (command === 'clone') {
+    await cloneAccount(name, password);
+} else if (command === 'clones') {
+    const all = families();
+    console.log(all.length ? all.map(describeFamily).join('\n') : 'No clones yet. Make one with: bun host.ts clone <main>');
+    process.exit(0);
+} else if (command === 'unclone') {
+    if (!name) usage();
+    console.log(unlinkClone(name) ? `"${toSafeName(name)}" is a normal account again. The shared bank stays with its main.` : `"${toSafeName(name)}" is not a clone.`);
     process.exit(0);
 } else if (command === 'add' || command === 'reset') {
     await addAccount(command, name, password);

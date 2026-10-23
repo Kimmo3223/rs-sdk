@@ -146,6 +146,15 @@ class Client(AsyncBotMethods, AsyncSdkMethods):
         params = {"allowStale": "1"} if allow_stale else None
         return await self._request("GET", "/state", "sdk.getState", params=params)  # type: ignore[no-any-return]
 
+    async def clone(self, name: str) -> Client:
+        """Make a clone named ``name`` and return a client that controls it.
+
+        See :meth:`SyncClient.clone`. Run the clone alongside this bot with
+        ``asyncio.gather``.
+        """
+        info = await self._request("POST", "/clone", "clone", json={"name": name})
+        return Client(info["name"], info["port"], _host_of(self.base_url))
+
     async def health(self) -> RSObject:
         """Bridge status: bot name, gateway state, whether a game client is attached, queue."""
         return await self._request("GET", "/health", None)  # type: ignore[no-any-return]
@@ -197,6 +206,23 @@ class SyncClient(SyncBotMethods, SyncSdkMethods):
         params = {"allowStale": "1"} if allow_stale else None
         return self._request("GET", "/state", "sdk.getState", params=params)  # type: ignore[no-any-return]
 
+    def clone(self, name: str) -> SyncClient:
+        """Make a clone named ``name`` and return a client that controls it.
+
+        A clone is a second character that shares this bot's bank and skill XP
+        (XP either of them earns goes to both) but has its own inventory,
+        equipment and position. Every 100 total levels unlock one clone. The
+        clone gets its own game client (no browser tab) and starts in
+        Lumbridge; it stops when this bot's ``play.ts`` stops.
+
+        Calling it again with the same name gives the same clone back, so a
+        script can simply start with ``jaska = bot.clone("jaska")``. Raises
+        :class:`RSError` when the clone can't be made, e.g. it isn't unlocked
+        yet or the name is taken. Making one can take up to a minute.
+        """
+        info = self._request("POST", "/clone", "clone", json={"name": name})
+        return SyncClient(info["name"], info["port"], _host_of(self.base_url))
+
     def health(self) -> RSObject:
         return self._request("GET", "/health", None)  # type: ignore[no-any-return]
 
@@ -211,6 +237,10 @@ class SyncClient(SyncBotMethods, SyncSdkMethods):
 
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
         self.close()
+
+
+def _host_of(base_url: str) -> str:
+    return base_url.split("://", 1)[1].rsplit(":", 1)[0]
 
 
 def _resolve(bot: str | None, port: int | None) -> tuple[str | None, int]:
