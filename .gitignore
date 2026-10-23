@@ -39,3 +39,4 @@ server/engine/data/market.sqlite*
 /dashboard-max/data/
 .venv/
 .play-logs/
+server/gate/.secret
