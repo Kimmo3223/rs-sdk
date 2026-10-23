@@ -206,7 +206,6 @@ The first character's bot is on port 8765. For others, put the port
 
 ### Playing with friends
 
-The game server runs on your computer and only you are on it. Hosting a
-server that friends can join isn't set up yet. When it is, each bot's server
-address lives in its `bots/<name>/bot.env`, and `play.ts` won't start a local
-game server for a bot that points somewhere else.
+[HOSTING.md](HOSTING.md) shows how to host the game for friends:
+`bun host.ts` shares it through a Cloudflare tunnel with sign-in required, and
+`bun host.ts add <name>` gives a friend an account.
