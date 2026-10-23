@@ -2040,6 +2040,99 @@ export class MapView extends GameShell {
         return -1;
     }
 
+    // custom: unified map row -> raw world z, or -1 outside every band (inverse of remapZ)
+    static rawZ(unifiedZ: number): number {
+        const square: number = unifiedZ >> 6;
+        for (const band of MapView.MAP_BANDS) {
+            if (square >= band.from + band.offset && square <= band.to + band.offset) {
+                return ((square - band.offset) << 6) | (unifiedZ & 63);
+            }
+        }
+        return -1;
+    }
+
+    // custom: the world tile under a canvas pixel, using the same view bounds as mainredraw
+    screenToWorld(screenX: number, screenY: number): { x: number; z: number; underground: boolean } | null {
+        const left: number = this.focusX - ((this.sWid / this.zoom) | 0);
+        const top: number = this.focusZ - ((this.sHei / this.zoom) | 0);
+        const right: number = this.focusX + ((this.sWid / this.zoom) | 0);
+        const bottom: number = this.focusZ + ((this.sHei / this.zoom) | 0);
+        const mapX: number = Math.floor(left + (screenX * (right - left)) / this.sWid);
+        const mapY: number = Math.floor(top + (screenY * (bottom - top)) / this.sHei);
+        if (mapX < 0 || mapX >= this.mapWidth || mapY < 0 || mapY >= this.mapHeight) return null;
+        // mapY counts down from the north edge; a tile's map row is (origin + height - z).
+        const unifiedZ: number = this.mapOriginZ + this.mapHeight - mapY;
+        const z: number = MapView.rawZ(unifiedZ);
+        if (z === -1) return null;
+        const band = MapView.MAP_BANDS.find(b => (z >> 6) >= b.from && (z >> 6) <= b.to);
+        return { x: mapX + this.mapOriginX, z, underground: band === MapView.MAP_BANDS[1] };
+    }
+
+    // custom: right-click popup with the clicked tile's coordinates, copied to the clipboard
+    coordPopup: HTMLDivElement | null = null;
+    coordHover: HTMLDivElement | null = null;
+
+    showCoordinates(screenX: number, screenY: number, clientX: number, clientY: number): void {
+        const spot = this.screenToWorld(screenX, screenY);
+        this.hideCoordinates();
+        if (!spot) return;
+        const coords: string = `${spot.x}, ${spot.z}`;
+        const walk: string = `bot.walk_to(${spot.x}, ${spot.z})`;
+        const popup: HTMLDivElement = document.createElement('div');
+        popup.style.cssText = 'position:fixed;z-index:10;background:#000d;color:#ff0;border:1px solid #ff0;' +
+            'border-radius:6px;padding:8px 10px;font:14px monospace;box-shadow:0 2px 8px #0008;';
+        popup.style.left = `${Math.min(clientX + 8, window.innerWidth - 230)}px`;
+        popup.style.top = `${Math.min(clientY + 8, window.innerHeight - 110)}px`;
+        const title: HTMLDivElement = document.createElement('div');
+        title.style.cssText = 'font-size:18px;margin-bottom:4px;';
+        title.textContent = coords;
+        const note: HTMLDivElement = document.createElement('div');
+        note.style.cssText = 'color:#ccc;font-size:12px;margin-bottom:6px;';
+        note.textContent = spot.underground ? 'underground' : 'surface';
+        popup.append(title, note);
+        const button = (label: string, text: string): HTMLButtonElement => {
+            const b: HTMLButtonElement = document.createElement('button');
+            b.textContent = label;
+            b.style.cssText = 'margin-right:6px;font:12px monospace;cursor:pointer;';
+            b.onclick = (e: MouseEvent): void => {
+                e.stopPropagation();
+                this.copyText(text, note);
+            };
+            return b;
+        };
+        popup.append(button('Copy x, z', coords), button('Copy walk_to', walk));
+        popup.onmousedown = (e: MouseEvent): void => e.stopPropagation();
+        document.body.appendChild(popup);
+        this.coordPopup = popup;
+        this.copyText(coords, note);
+    }
+
+    copyText(text: string, status: HTMLElement): void {
+        const done = (message: string): void => { status.textContent = message; };
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).then(() => done(`copied: ${text}`), () => done('select the text to copy'));
+        } else {
+            done('select the text to copy');
+        }
+    }
+
+    hideCoordinates(): void {
+        this.coordPopup?.remove();
+        this.coordPopup = null;
+    }
+
+    updateHoverCoordinates(screenX: number, screenY: number): void {
+        if (typeof document === 'undefined') return;
+        if (!this.coordHover) {
+            this.coordHover = document.createElement('div');
+            this.coordHover.style.cssText = 'position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:9;color:#ff0;font:13px monospace;' +
+                'text-shadow:1px 1px 0 #000;pointer-events:none;';
+            document.body.appendChild(this.coordHover);
+        }
+        const spot = this.screenToWorld(screenX, screenY);
+        this.coordHover.textContent = spot ? `${spot.x}, ${spot.z}${spot.underground ? ' (underground)' : ''}  - right-click to copy` : '';
+    }
+
     // custom: fetch player positions from server
     fetchPlayerPositions(): void {
         this.playerFetchPending = true;
@@ -2411,7 +2504,9 @@ export class MapView extends GameShell {
         if (e.button === 2) {
             this.nextMouseClickButton = 2;
             this.mouseButton = 2;
+            this.showCoordinates(x, y, e.clientX, e.clientY);
         } else {
+            this.hideCoordinates();
             this.nextMouseClickButton = 1;
             this.mouseButton = 1;
             canvas.style.cursor = 'grabbing';
@@ -2464,6 +2559,7 @@ export class MapView extends GameShell {
         if (!this.dragging) {
             this.mouseX = x;
             this.mouseY = y;
+            this.updateHoverCoordinates(x, y);
         }
     }
 

@@ -112,3 +112,47 @@ describe('map viewport scaling', () => {
         expect(Pix2D.pixels[0]).toBe(0);
     });
 });
+
+describe('map coordinates', () => {
+    function view(width: number, height: number, zoom: number, worldX: number, worldZ: number) {
+        const v = Object.assign(Object.defineProperties(Object.create(MapView.prototype), {
+            sWid: { value: width }, sHei: { value: height }
+        }), { zoom, mapWidth: 30 << 6, mapHeight: 52 << 6, mapOriginX: 28 << 6, mapOriginZ: 41 << 6 }) as MapView;
+        // Center the view on a world tile the way drawPlayers places a player there.
+        v.focusX = worldX - v.mapOriginX;
+        v.focusZ = v.mapOriginZ + v.mapHeight - v.remapZ(worldZ);
+        return v;
+    }
+
+    test('rawZ undoes remapZ in every band', () => {
+        for (const band of MapView.MAP_BANDS) {
+            for (const z of [band.from << 6, (band.from << 6) + 17, (band.to << 6) + 63]) {
+                const unified = MapView.prototype.remapZ.call({}, z);
+                expect(MapView.rawZ(unified)).toBe(z);
+            }
+        }
+        expect(MapView.rawZ(100 << 6)).toBe(-1);
+    });
+
+    test('the tile under the view center is the one the view is centered on', () => {
+        for (const [x, z] of [[3222, 3218], [3185, 3436], [2951, 3380], [3200, 9600]] as const) {
+            const v = view(1280, 720, 4, x, z);
+            const spot = v.screenToWorld(640, 360)!;
+            expect([spot.x, spot.z]).toEqual([x, z]);
+            expect(spot.underground).toBe(z >= 9000);
+        }
+    });
+
+    test('moving one tile on screen moves one tile in the world', () => {
+        const v = view(1280, 720, 4, 3222, 3218);
+        // At zoom 4 a tile is 2 px; right is +x, down is -z (south).
+        expect(v.screenToWorld(640 + 2, 360)).toMatchObject({ x: 3223, z: 3218 });
+        expect(v.screenToWorld(640, 360 + 2)).toMatchObject({ x: 3222, z: 3217 });
+    });
+
+    test('nothing off the map', () => {
+        const v = view(1280, 720, 4, 3222, 3218);
+        v.focusX = -5000;
+        expect(v.screenToWorld(640, 360)).toBeNull();
+    });
+});
