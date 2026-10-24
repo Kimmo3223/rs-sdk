@@ -85,13 +85,25 @@ export function createCloneManager(options: CloneManagerOptions) {
     let viewing = main.username.toLowerCase();
     // The main's headless client, while the tab shows a clone.
     let mainClient: Subprocess | null = null;
+    // The main's watcher account once made, and who the tab showed before watching.
+    let watcher: string | null = null;
+    let returnTo: string | null = null;
     // One clone at a time, so two calls can't pick the same port.
     let chain: Promise<unknown> = Promise.resolve();
 
     /** Ask the server to make the clone. Returns its account name. */
     async function register(clone: string): Promise<string> {
+        return serverRequest('clone', clone);
+    }
+
+    /** Make the main's watcher account (always invisible, only spectates). Returns its name. */
+    async function registerWatcher(): Promise<string> {
+        return serverRequest('watcher');
+    }
+
+    async function serverRequest(kind: 'clone' | 'watcher', clone = ''): Promise<string> {
         if (isLocal(main.server)) {
-            const { createCloneFor, CloneError } = await import('../server/gate/clones');
+            const { createCloneFor, createWatcherFor, CloneError } = await import('../server/gate/clones');
             // A local server only checks passwords when host.ts runs it with accounts.
             const { DB_PATH } = await import('../server/gate/accounts');
             let accounts = false;
@@ -102,7 +114,9 @@ export function createCloneManager(options: CloneManagerOptions) {
                 db.close();
             }
             try {
-                return (await createCloneFor(main.username, main.password, clone, { accounts })).name;
+                return kind === 'clone'
+                    ? (await createCloneFor(main.username, main.password, clone, { accounts })).name
+                    : (await createWatcherFor(main.username, main.password, { accounts })).name;
             } catch (error) {
                 if (error instanceof CloneError) throw new Error(error.message);
                 throw error;
@@ -110,7 +124,7 @@ export function createCloneManager(options: CloneManagerOptions) {
         }
         let res: Response;
         try {
-            res = await fetch(`${serverOrigin(main.server!)}/gate/clone`, {
+            res = await fetch(`${serverOrigin(main.server!)}/gate/${kind}`, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ username: main.username, password: main.password, clone }),
@@ -120,7 +134,7 @@ export function createCloneManager(options: CloneManagerOptions) {
             throw new Error(`Could not reach ${main.server}: ${(error as Error).message}`);
         }
         const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; result?: { name: string } } | null;
-        if (!body) throw new Error(`${main.server} doesn't make clones (HTTP ${res.status}); only servers hosted with this repo's host.ts do`);
+        if (!body) throw new Error(`${main.server} doesn't make ${kind}s (HTTP ${res.status}); only servers hosted with this repo's host.ts do`);
         if (!body.ok || !body.result) throw new Error(body.error ?? `the server refused (HTTP ${res.status})`);
         return body.result.name;
     }
@@ -255,7 +269,7 @@ export function createCloneManager(options: CloneManagerOptions) {
     }
 
     function family() {
-        return { main: main.username.toLowerCase(), members: [main.username.toLowerCase(), ...ready], viewing };
+        return { main: main.username.toLowerCase(), members: [main.username.toLowerCase(), ...ready], viewing, watcher, returnTo };
     }
 
     function headlessClient(name: string): Subprocess {
@@ -266,23 +280,26 @@ export function createCloneManager(options: CloneManagerOptions) {
     function switchTo(to: string): void {
         to = to.toLowerCase();
         const isMain = to === main.username.toLowerCase();
-        if (!isMain && !ready.has(to)) throw new Error(`${to} is not one of ${main.username}'s clones that are in the game`);
+        const isWatcher = to === watcher;
+        if (!isMain && !isWatcher && !ready.has(to)) throw new Error(`${to} is not one of ${main.username}'s clones that are in the game`);
         if (to === viewing) return;
         const from = viewing;
+        if (isWatcher) returnTo = from;
 
         // The tab is about to log in as `to`: its headless client steps aside.
         if (isMain) {
             mainClient?.kill('SIGINT');
             mainClient = null;
-        } else {
+        } else if (!isWatcher) {
             running.get(to)!.procs[1]?.kill('SIGINT');
         }
         viewing = to;
         log(`Browser tab switches from ${from} to ${to}.`);
 
         // Once the tab has left `from`, a headless client keeps it in the game.
+        // The watcher just logs out: it only exists to watch.
         setTimeout(() => {
-            if (viewing === from) return;
+            if (viewing === from || from === watcher) return;
             if (from === main.username.toLowerCase()) {
                 mainClient = headlessClient(from);
             } else {
@@ -293,11 +310,17 @@ export function createCloneManager(options: CloneManagerOptions) {
     }
 
     return {
-        /** GET /family and POST /switch, for the browser game tab (CORS-checked by the caller). */
+        /** GET /family, POST /switch {"to"} and POST /watch, for the browser game tab (CORS-checked by the caller). */
         async handleBrowser(req: Request, path: string): Promise<Response> {
             if (path === '/family') return json({ ok: true, result: family() });
             const body = await req.json().catch(() => null) as { to?: unknown } | null;
             try {
+                if (path === '/watch') {
+                    // Watch through the watcher account, so the character the tab showed keeps playing.
+                    watcher = await registerWatcher();
+                    switchTo(watcher);
+                    return json({ ok: true, result: family() });
+                }
                 if (typeof body?.to !== 'string') throw new Error('"to" must be a character name');
                 switchTo(body.to);
                 return json({ ok: true, result: family() });

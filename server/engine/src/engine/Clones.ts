@@ -47,6 +47,14 @@ function store(): Database | null {
 export function createTables(database: Database) {
     database.exec('CREATE TABLE IF NOT EXISTS clone (name TEXT PRIMARY KEY, main TEXT NOT NULL)');
     database.exec('CREATE TABLE IF NOT EXISTS family (main TEXT PRIMARY KEY, stats TEXT NOT NULL, bank TEXT NOT NULL, total INTEGER NOT NULL)');
+    // Watcher accounts: a main's always-invisible character for spectating (engine/Spectate.ts).
+    database.exec('CREATE TABLE IF NOT EXISTS watcher (name TEXT PRIMARY KEY, main TEXT NOT NULL)');
+}
+
+/** True for a watcher account (see Spectate.ts), which never plays. */
+export function isWatcher(username: string): boolean {
+    const database = store();
+    return Boolean(database?.query('SELECT 1 FROM watcher WHERE name=?').get(username));
 }
 
 export function totalLevel(stats: number[]): number {

@@ -196,11 +196,14 @@ Below the game in the browser tab there's a bar:
   made with `clone()`. Click a clone and the tab switches to it, so you can
   play it yourself. The character you leave keeps going in the background, and
   your Python scripts keep controlling all of them.
-- **Watch player:** type anyone's name and click **Watch**. You turn invisible
-  and follow them around, seeing what they see; you can't walk or do things
-  while watching. **Stop watching** (or the player logging out) puts you back
-  exactly where you were. The player gets a message that you're watching. In
-  the game chat, `::spectate <name>` and `::spectate` do the same.
+- **Watch player:** type anyone's name and click **Watch**. The tab switches
+  to your *watcher*, `<yourname>_w`: an invisible character (made for you the
+  first time, with your password) that can only watch. It follows the player
+  around so you see what they see. Your own character keeps playing in the
+  background, so a running script isn't disturbed. **Stop watching** switches
+  the tab back. The player gets a message that you're watching. (Typing
+  `::spectate <name>` in chat instead makes the character you're playing watch,
+  which pauses it until `::spectate` stops it.)
 
 ## All commands
 

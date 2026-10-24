@@ -84,8 +84,8 @@ const clones = createCloneManager({
 });
 
 // The game tab runs on the game server's website and calls this local bridge, so
-// /family and /switch answer only that website (CORS), and /switch needs a JSON
-// body so another site can't trigger it without the browser's preflight check.
+// /family, /switch and /watch answer only that website (CORS), and the POSTs need
+// a JSON body so another site can't trigger them without the browser's preflight check.
 const gameOrigins = !env.server || env.server.startsWith('localhost') || env.server.startsWith('127.')
     ? ['http://localhost:8888', 'http://127.0.0.1:8888']
     : [/^wss?:\/\//.test(env.server) ? env.server.replace(/^ws/, 'http').replace(/\/gateway$/, '') : `https://${env.server}`];
@@ -101,7 +101,7 @@ async function browserRequest(req: Request, path: string): Promise<Response> {
         vary: 'Origin',
     };
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (path === '/switch' && (req.method !== 'POST' || !req.headers.get('content-type')?.startsWith('application/json'))) {
+    if (path !== '/family' && (req.method !== 'POST' || !req.headers.get('content-type')?.startsWith('application/json'))) {
         return new Response('POST JSON only', { status: 400, headers: cors });
     }
     const res = await clones.handleBrowser(req, path);
@@ -120,7 +120,7 @@ const server = Bun.serve({
         // POST /clone {"name"} makes and starts a clone of this bot (pybridge/clones.ts).
         if (req.method === 'POST' && path === '/clone') return clones.handle(req);
         // The browser game tab's character switcher.
-        if (path === '/family' || path === '/switch') return browserRequest(req, path);
+        if (path === '/family' || path === '/switch' || path === '/watch') return browserRequest(req, path);
         return bridge.fetch(req);
     },
 });

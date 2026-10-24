@@ -50,8 +50,8 @@ import { NpcStat } from '#/engine/entity/NpcStat.js';
 import Obj from '#/engine/entity/Obj.js';
 import Player from '#/engine/entity/Player.js';
 // After Player: Clones uses Player's exports, and importing it first breaks the Player/NetworkPlayer cycle.
-import { joinFamily, leaveFamily, saveFamilies } from '#/engine/Clones.js';
-import { followTarget } from '#/engine/Spectate.js';
+import { isWatcher, joinFamily, leaveFamily, saveFamilies } from '#/engine/Clones.js';
+import { becomeWatcher, followTarget, prepareWatcher } from '#/engine/Spectate.js';
 import { PlayerLoading } from '#/engine/entity/PlayerLoading.js';
 import { PlayerQueueType } from '#/engine/entity/PlayerQueueRequest.js';
 import { PlayerStat, PlayerStatEnabled, PlayerStatNameMap } from '#/engine/entity/PlayerStat.js';
@@ -1145,7 +1145,15 @@ class World {
             } catch (err) {
                 printError(`Clones: ${player.username} could not join their family: ${err}`);
             }
+            let watcher = false;
+            try {
+                watcher = isWatcher(player.username);
+            } catch (err) {
+                printError(`Clones: watcher lookup for ${player.username} failed: ${err}`);
+            }
+            if (watcher) prepareWatcher(player);
             player.onLogin();
+            if (watcher) becomeWatcher(player);
             if (cloneLocked) {
                 player.messageGame(cloneLocked);
                 player.loggingOut = true;

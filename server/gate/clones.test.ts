@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { checkLogin, ensureAccount, listAccounts, migrateDatabase } from './accounts';
-import { createCloneFor, family } from './clones';
+import { createCloneFor, createWatcherFor, family } from './clones';
 import { createGate } from './gate';
 
 const dir = mkdtempSync(join(tmpdir(), 'gate-clones-'));
@@ -73,5 +73,20 @@ describe('POST /gate/clone', () => {
         const refused = await post({ username: 'esko', password: 'esko-password', clone: 'eskod' }, '3.3.3.3');
         expect(refused.status).toBe(409);
         expect((await refused.json()).error).toContain('next one needs total level 200');
+    });
+});
+
+describe('createWatcherFor', () => {
+    test('makes "<main>_w" with the main\'s password, and again keeps it in step', async () => {
+        const make = (password: string) => createWatcherFor('kimmo', password, { accounts: true, path, accountsPath });
+        expect(await make('kimmo-password')).toEqual({ name: 'kimmo_w' });
+        expect(await checkLogin('kimmo_w', 'kimmo-password', accountsPath)).toBeTrue();
+        expect(await make('new-kimmo-password')).toEqual({ name: 'kimmo_w' });
+        expect(await checkLogin('kimmo_w', 'new-kimmo-password', accountsPath)).toBeTrue();
+    });
+
+    test('never takes an existing account', async () => {
+        await ensureAccount('esko_w', 'whatever-pass', { path: accountsPath });
+        await expect(createWatcherFor('esko', 'esko-password', { accounts: true, path, accountsPath })).rejects.toThrow('taken');
     });
 });

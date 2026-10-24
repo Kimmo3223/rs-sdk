@@ -11,7 +11,7 @@
 //     gateway check the account password; /worldfeed still needs the cookie)
 //   - game cache files (/crc, /config..., /api/version) that the headless
 //     lite client downloads before it logs in
-// POST /gate/clone also needs no cookie: a bot's clone("name") call sends its
+// POST /gate/clone and /gate/watcher also need no cookie: a bot's clone("name") call sends its
 // own name and password, which are checked like a sign-in.
 // The browser client link play.ts opens (/bot?bot=<name>#password=<password>)
 // signs in by itself: the sign-in page picks the password out of the #fragment,
@@ -22,7 +22,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from 'path';
 import type { ServerWebSocket } from 'bun';
 import { checkLogin, toSafeName } from './accounts';
-import { CloneError, createCloneFor } from './clones';
+import { CloneError, createCloneFor, createWatcherFor } from './clones';
 
 const COOKIE = 'rs_gate';
 const SESSION_DAYS = 30;
@@ -37,6 +37,8 @@ export interface GateOptions {
     checkLogin: (username: string, password: string) => Promise<boolean>;
     /** Make a clone for a signed-in main (see createCloneFor). Without it /gate/clone answers 404. */
     createClone?: (main: string, password: string, clone: string) => Promise<{ name: string; created: boolean }>;
+    /** Make a signed-in main's watcher account (see createWatcherFor). Without it /gate/watcher answers 404. */
+    createWatcher?: (main: string, password: string) => Promise<{ name: string }>;
     /** Called for every visit, sign-in and connection (never with a password). */
     accessLog?: (entry: AccessEntry) => void;
     /** Failed sign-ins allowed per client in `failWindowMs` (default 10 per 10 minutes). */
@@ -247,7 +249,8 @@ export function createGate(options: GateOptions) {
     }
 
     async function handleClone(req: Request, url: URL, ip: string): Promise<Response> {
-        if (!options.createClone) return Response.json({ ok: false, error: 'This server does not make clones' }, { status: 404 });
+        const watcher = url.pathname === '/gate/watcher';
+        if (watcher ? !options.createWatcher : !options.createClone) return Response.json({ ok: false, error: `This server does not make ${watcher ? 'watchers' : 'clones'}` }, { status: 404 });
         const body = await req.json().catch(() => null) as { username?: unknown; password?: unknown; clone?: unknown } | null;
         const username = typeof body?.username === 'string' ? body.username : '';
         const password = typeof body?.password === 'string' ? body.password : '';
@@ -262,7 +265,8 @@ export function createGate(options: GateOptions) {
             return Response.json({ ok: false, error: 'Wrong username or password' }, { status: 401 });
         }
         try {
-            const result = await options.createClone(username, password, clone);
+            if (watcher) return Response.json({ ok: true, result: await options.createWatcher!(username, password) });
+            const result = await options.createClone!(username, password, clone);
             if (result.created) log('clone', req, ip, toSafeName(username), new URL(`/gate/clone/${result.name}`, url));
             return Response.json({ ok: true, result });
         } catch (error) {
@@ -292,7 +296,7 @@ export function createGate(options: GateOptions) {
                 if (req.method === 'POST') return handleLogin(req, url, ip);
                 return user ? Response.redirect(safeNext(url.searchParams.get('next')), 303) : loginPage(safeNext(url.searchParams.get('next')));
             }
-            if (url.pathname === '/gate/clone' && req.method === 'POST') return handleClone(req, url, ip);
+            if ((url.pathname === '/gate/clone' || url.pathname === '/gate/watcher') && req.method === 'POST') return handleClone(req, url, ip);
             if (url.pathname === '/gate/logout') {
                 return new Response(null, { status: 303, headers: { location: '/gate/login', 'set-cookie': cookieHeader('', 0) } });
             }
@@ -345,6 +349,7 @@ if (import.meta.main) {
     const logPath = arg('--log', join(import.meta.dir, '..', '..', '.play-logs', 'access.log'));
     const gate = createGate({ upstream: arg('--upstream', 'http://127.0.0.1:8888'), secret: loadSecret(), checkLogin,
         createClone: (main, password, clone) => createCloneFor(main, password, clone, { accounts: true }),
+        createWatcher: (main, password) => createWatcherFor(main, password, { accounts: true }),
         accessLog: fileAccessLog(logPath) });
     Bun.serve({ hostname: '127.0.0.1', port, idleTimeout: 0, fetch: gate.fetch, websocket: gate.websocket });
     console.log(`[gate] Sign-in required on http://127.0.0.1:${port}`);

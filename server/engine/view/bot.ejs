@@ -834,6 +834,8 @@
             return (new URLSearchParams(location.search).get('bot') || '').toLowerCase();
         }
 
+        let lastFamily = null;
+
         async function refreshFamily() {
             const bar = document.getElementById('family-bar');
             bar.style.display = clientInstance?.ingame ? 'block' : 'none';
@@ -843,11 +845,12 @@
                 const body = await res.json();
                 if (body.ok) family = body.result;
             } catch (e) {}
+            lastFamily = family;
             const switcher = document.getElementById('family-switcher');
             // Always offer the way back to the main, even if this tab's character is missing
             // from the list (say, its clone process stopped).
             const names = family ? [...family.members] : [];
-            if (family && !names.includes(currentBot()) && currentBot()) names.push(currentBot());
+            if (family && !names.includes(currentBot()) && currentBot() && currentBot() !== family.watcher) names.push(currentBot());
             if (names.length < 2) {
                 switcher.style.display = 'none';
                 return;
@@ -887,13 +890,43 @@
         }
         window.switchCharacter = switchCharacter;
 
-        window.spectatePlayer = function() {
+        // With a bridge, watching goes through the main's watcher account ("<main>_w"): the
+        // tab switches to it, and the character it showed keeps playing (scripts too).
+        // Without one, the tab's own character watches.
+        window.spectatePlayer = async function() {
             const name = document.getElementById('spectate-name').value.trim();
-            if (name && clientInstance?.say) clientInstance.say('::spectate ' + name);
+            if (!name || !clientInstance?.say) return;
+            if (!lastFamily || currentBot() === lastFamily.watcher) {
+                clientInstance.say('::spectate ' + name);
+                return;
+            }
+            document.getElementById('bot-status').textContent = 'Switching to your watcher...';
+            try {
+                const res = await fetch(BRIDGE + '/watch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+                const body = await res.json();
+                if (!body.ok) throw new Error(body.error);
+                try { sessionStorage.setItem('bot_pending_spectate', name); } catch (e) {}
+                updateUrlWithBot(body.result.watcher);
+                location.reload();
+            } catch (e) {
+                document.getElementById('bot-status').textContent = 'Could not start watching: ' + e.message;
+            }
         };
         window.stopSpectating = function() {
-            if (clientInstance?.say) clientInstance.say('::spectate');
+            if (lastFamily && currentBot() === lastFamily.watcher) {
+                switchCharacter(lastFamily.returnTo || lastFamily.main);
+            } else if (clientInstance?.say) {
+                clientInstance.say('::spectate');
+            }
         };
+        // After switching to the watcher, start watching once it is in the game.
+        setInterval(() => {
+            let pending = null;
+            try { pending = sessionStorage.getItem('bot_pending_spectate'); } catch (e) {}
+            if (!pending || !clientInstance?.ingame || !clientInstance.say) return;
+            try { sessionStorage.removeItem('bot_pending_spectate'); } catch (e) {}
+            setTimeout(() => clientInstance.say('::spectate ' + pending), 1500);
+        }, 1000);
 
         refreshFamily();
         setInterval(refreshFamily, 5000);

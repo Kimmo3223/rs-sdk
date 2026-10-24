@@ -142,10 +142,10 @@ export class NetworkPlayer extends Player {
 
             if (decoder) {
                 const message = decoder.decode(NetworkPlayer.inBuf, this.client.waiting);
-                const spectating = this.spectating !== null && SPECTATOR_BLOCKED.has(packetType);
+                const spectating = (this.spectating !== null || this.isWatcher) && SPECTATOR_BLOCKED.has(packetType);
                 if (spectating && World.currentTick - this.spectatorHintTick > 10) {
                     this.spectatorHintTick = World.currentTick;
-                    this.messageGame('You are watching someone. Type ::spectate to stop.');
+                    this.messageGame(this.isWatcher ? 'This is a watcher: it only watches.' : 'You are watching someone. Type ::spectate to stop.');
                 }
                 const success: boolean = spectating ? false : (ClientGameProtRepository.getHandler(packetType)?.handle(message, this) ?? false);
 

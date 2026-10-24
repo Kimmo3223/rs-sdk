@@ -18,6 +18,7 @@ function open(path = CLONES_DB_PATH): Database {
     // Same tables as createTables() in the engine's Clones.ts.
     db.exec('CREATE TABLE IF NOT EXISTS clone (name TEXT PRIMARY KEY, main TEXT NOT NULL)');
     db.exec('CREATE TABLE IF NOT EXISTS family (main TEXT PRIMARY KEY, stats TEXT NOT NULL, bank TEXT NOT NULL, total INTEGER NOT NULL)');
+    db.exec('CREATE TABLE IF NOT EXISTS watcher (name TEXT PRIMARY KEY, main TEXT NOT NULL)');
     return db;
 }
 
@@ -152,4 +153,33 @@ export async function createCloneFor(main: string, password: string, clone: stri
         }
     }
     return { name, created: true };
+}
+
+/** A main's watcher account name: "<main>_w", within 12 characters. */
+export function watcherName(main: string): string {
+    return `${toSafeName(main).slice(0, 10).replace(/_+$/, '')}_w`;
+}
+
+/**
+ * Make (or refresh) a main's watcher account: an always-invisible character
+ * that can only spectate (engine Spectate.ts), with the main's password, so the
+ * main can watch players while its own character keeps playing.
+ */
+export async function createWatcherFor(main: string, password: string, options: { accounts: boolean; path?: string; accountsPath?: string }): Promise<{ name: string }> {
+    const safeMain = toSafeName(main);
+    const name = watcherName(safeMain);
+    const db = open(options.path);
+    try {
+        const owner = (db.query('SELECT main FROM watcher WHERE name = ?').get(name) as { main: string } | null)?.main;
+        if (owner && owner !== safeMain) throw new CloneError(`The name "${name}" is taken`);
+        if (!owner) {
+            if (mainOf(name, options.path) || (options.accounts && listAccounts(options.accountsPath).includes(name))) throw new CloneError(`The name "${name}" is taken`);
+            db.query('INSERT INTO watcher (name, main) VALUES (?, ?)').run(name, safeMain);
+        }
+        // Same password as the main, also after the main changed theirs.
+        if (options.accounts) await ensureAccount(name, password, { resetPassword: true, path: options.accountsPath });
+        return { name };
+    } finally {
+        db.close();
+    }
 }

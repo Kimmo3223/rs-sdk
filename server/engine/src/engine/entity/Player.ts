@@ -199,6 +199,7 @@ export default class Player extends PathingEntity {
     spectating: Player | null = null;
     spectateReturn: SpectateReturn | null = null;
     spectatorHintTick: number = -100;
+    isWatcher: boolean = false;
 
     /** Retry saved overflow when space becomes available, without dropping anything. */
     recoverItems() {

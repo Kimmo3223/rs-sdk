@@ -187,6 +187,9 @@ survival) is described in the project memory; this file is the human-readable ch
       drops `SPECTATOR_BLOCKED` packets (OP*, INV_BUTTON*, MOVE_*) while spectating; `Player.save`
       writes `spectateReturn` instead of the current position. Webclient side: the "Watch player"
       box in `view/bot.ejs` sends the command with `client.say('::spectate …')`.
+      Watcher accounts (`watcher` table in `data/clones.sqlite`, made by `server/gate/clones.ts`
+      `createWatcherFor`): `World.processLogins` calls `prepareWatcher` before `onLogin` (tutorial
+      varp done) and `becomeWatcher` after (invisible); `decodeIn` blocks their actions always.
       Verify: from the repo root, `bun test server/engine/test/spectate.test.ts`.
 
 ### Grand Exchange (rs-sdk)

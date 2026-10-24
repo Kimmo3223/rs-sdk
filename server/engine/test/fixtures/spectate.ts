@@ -11,7 +11,7 @@ const { default: VarPlayerType } = await import('../../src/cache/config/VarPlaye
 const { PlayerLoading } = await import('../../src/engine/entity/PlayerLoading.js');
 const { default: Packet } = await import('../../src/io/Packet.js');
 const { Visibility } = await import('../../src/network/rsbuf/index.js');
-const { startSpectating, stopSpectating, followTarget } = await import('../../src/engine/Spectate.js');
+const { becomeWatcher, startSpectating, stopSpectating, followTarget } = await import('../../src/engine/Spectate.js');
 InvType.load(process.env.BANK_TEST_CACHE!);
 ObjType.load(process.env.BANK_TEST_CACHE!);
 VarPlayerType.load(process.env.BANK_TEST_CACHE!);
@@ -63,5 +63,18 @@ online.add(target);
 startSpectating(watcher, 'target', find);
 stopSpectating(watcher);
 assert.deepEqual([watcher.x, watcher.z, watcher.spectating], [3222, 3218, null]);
+// A watcher account is always invisible, and stays put (invisible) when it stops watching.
+const eye = load('kimmo_w', 3094, 3106);
+others.set('kimmo_w', eye);
+becomeWatcher(eye);
+assert.equal(eye.visibility, Visibility.HARD);
+assert.match(startSpectating(eye, 'target', find), /Watching Target/);
+assert.equal(eye.spectateReturn, null);
+stopSpectating(eye);
+assert.equal(eye.spectating, null);
+assert.equal(eye.visibility, Visibility.HARD);
+assert.deepEqual([eye.x, eye.z], [target.x, target.z]);
+// Nobody can watch a watcher.
+assert.equal(startSpectating(watcher, 'kimmo_w', find), 'kimmo_w is not logged in.');
 console.log('Spectate checks passed');
 process.exit(0);
